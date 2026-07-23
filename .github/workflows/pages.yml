@@ -90,7 +90,7 @@ jobs:
       - name: Run lychee
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --config ci/lychee.toml --no-progress --insecure --format detailed "**/*.md"
+          args: --config .github/workflows/lychee.toml --no-progress --insecure --format detailed "**/*.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -107,7 +107,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check local markdown links
-        run: python ci/check_markdown_local_links.py
+        run: python .github/workflows/check_markdown_local_links.py
 
   check-markdown-markers:
     name: Check markdown markers
