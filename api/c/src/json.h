@@ -1,21 +1,20 @@
-// SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
+#pragma once
 
 #include "cJSON.h"
-#include "evidense.h"
+#include "evifluor.h"
 
 /**
- * @brief Loads JSON content from a file path into a cJSON structure.
+ * @brief Loads a JSON document from disk.
  *
- * @param file Null-terminated path to the file that should be parsed.
- * @return Pointer to the parsed cJSON document, or NULL on I/O or parse errors.
+ * @param file Path to the JSON file.
+ * @return Pointer to a cJSON tree owned by the caller, or NULL on failure.
  */
 DLLEXPORT cJSON *json_loadFromFile(const char *file);
 
 /**
- * @brief Writes a cJSON document to a file path.
+ * @brief Saves a JSON document to disk.
  *
- * @param file Null-terminated path where the JSON data should be saved.
- * @param json Pointer to the cJSON document that will be serialized.
+ * @param file Destination file path.
+ * @param json Document to persist; ownership remains with the caller.
  */
 DLLEXPORT void json_saveToFile(const char* file, cJSON* json);

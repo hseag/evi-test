@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evidense.h"
+#include "evifluor.h"
 
 /**
- * @brief Handles the `run` command to execute a sequence of operations on the device.
+ * @brief Executes the `run` CLI command, performing a full measurement cycle.
  *
- * @param self Pointer to the device instance used throughout the command run.
- * @param argcCmd Number of command-line arguments in `argvCmd`.
- * @param argvCmd Array of command-line arguments supplied by the user.
- * @return Error code describing the command outcome.
+ * @param self Runtime context with device state.
+ * @param argcCmd Number of command specific arguments.
+ * @param argvCmd Vector of command specific arguments.
+ * @return Error code describing the result of the command.
  */
 Error_t cmdRun(Evi_t * self, int argcCmd, char **argvCmd);
-

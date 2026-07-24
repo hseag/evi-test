@@ -2,232 +2,258 @@
 
 ## 1. Scope
 
-This chapter documents the Python command line interface.
-It complements the low-level Python API documentation.
+This chapter documents the Python command line tool only.
+It does not describe the in-process high-level or low-level Python APIs.
 
 ## 2. Overview
 
-The Python CLI provides direct access to common device operations from the command line.
-Its implementation is exposed in the generated API docs through the [`hse.evidense.cli`][cli-module-api] module.
-
-Entry points:
-
-```bash
-evidense --help
-python -m hse.evidense --help
-```
-
-## 3. Command Syntax
+The Python interface can also be used through the command line entry point.
+This tool provides access to common device operations and the guided run workflow without embedding the library in application code.
 
 General syntax:
 
-```bash
-python -m hse.evidense [--device SERIAL] [--debug] COMMAND [OPTIONS]
+```text
+evifluor [OPTIONS] COMMAND [ARGUMENTS]
+python -m hse.evifluor [OPTIONS] COMMAND [ARGUMENTS]
 ```
 
-Global options:
+The command line tool is suitable for:
 
-- `--device SN0010` selects a specific device
-- `--debug` prints a full traceback on failure
+- interactive device inspection
+- operational workflows
+- scripting
+- test and service tasks
 
-The currently implemented top-level commands are parsed in [`main()`][cli-main-api]. The current top-level commands are:
+The currently implemented command set includes:
 
 - `info`
 - `selftest`
 - `checkempty`
 - `run`
-- `kit`
 
-## 4. Main Commands
+## 3. Installation and Startup
 
-### 4.1 `info`
-
-Reads basic device information and prints:
-
-- serial number
-- firmware version
-
-Examples:
+Entry points:
 
 ```bash
-python -m hse.evidense info
-python -m hse.evidense --device SN0010 info
-python -m hse.evidense info --json
+evifluor --help
+python -m hse.evifluor --help
 ```
 
-### 4.2 `selftest`
+This chapter focuses on usage after the tool is available in the Python environment.
 
-Runs the internal device self-test.
+## 4. Command Syntax
 
-Behavior:
+Global options:
 
-- plain text output by default
-- JSON output with `--json`
-- optional file output with `--file`
-- process return code indicates success or failure of the self-test
-
-Examples:
-
-```bash
-python -m hse.evidense selftest
-python -m hse.evidense selftest --json
-python -m hse.evidense selftest --file selftest.txt
-```
-
-### 4.3 `checkempty`
-
-Checks whether the cuvette guide is empty.
-
-Current behavior:
-
-- prints `Empty` if empty
-- prints `Not empty` otherwise
-- exits with status `0` when empty and `1` otherwise
+- `--device DEVICE` selects a specific device serial number
+- `--debug` prints the full traceback on errors
 
 Example:
 
-```bash
-python -m hse.evidense checkempty
+```text
+python -m hse.evifluor --device SN0010 selftest
 ```
 
-### 4.4 `run`
+## 5. Main Commands
 
-Manages persisted run state.
+### 5.1 `info`
 
-Subcommands:
+Shows device information.
 
-- `init NR_OF_BLANKS`
-- `measure [COMMENT]`
-- `addkit KIT_FILE`
-- `export`
-
-Key options:
-
-- `--working-dir`
-- `--file`
-- `--no_purity_ratio_260_280_correction True|False` on `run init`
-
-Examples:
-
-```bash
-python -m hse.evidense run init 2
-# The liquid handler aspirates at least 10 uL from the current blank or sample well.
-# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
-# Start the baseline measurement for blank 1.
-python -m hse.evidense run measure
-# Move the cuvette into the cuvette guide and start the air measurement for blank 1.
-python -m hse.evidense run measure
-# Dispense the liquid into the cuvette and start the sample measurement for blank 1.
-python -m hse.evidense run measure "blank 1"
-# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
-
-# Repeat the same sequence for blank 2.
-python -m hse.evidense run measure
-python -m hse.evidense run measure
-python -m hse.evidense run measure "blank 2"
-
-# Repeat the same sequence for sample 1.
-python -m hse.evidense run measure
-python -m hse.evidense run measure
-python -m hse.evidense run measure "sample 1"
-
-# Repeat the same sequence for sample 2.
-python -m hse.evidense run measure
-python -m hse.evidense run measure
-python -m hse.evidense run measure "sample 2"
-python -m hse.evidense run addkit factors.json
-python -m hse.evidense run export
+```text
+python -m hse.evifluor info
+python -m hse.evifluor info --json
 ```
 
-`run` uses a saved state file so the workflow can continue across invocations.
+Behavior:
 
-### 4.5 `kit`
+- default output prints serial number, firmware version, and production number
+- `--json` prints the same information as formatted JSON
 
-Creates kit files from the active run state.
+### 5.2 `selftest`
 
-Currently documented subcommand:
+Runs the device self-test.
 
-- `kit create`
-
-Examples:
-
-```bash
-python -m hse.evidense kit create kit.json
-python -m hse.evidense kit create kit.json --comment "Batch A"
+```text
+python -m hse.evifluor selftest
+python -m hse.evifluor selftest --json
+python -m hse.evifluor selftest --file selftest.txt
 ```
 
-## 5. Output Formats
+Behavior:
 
-The Python CLI supports:
+- default output prints `selftest: OK` or `selftest: FAILED`
+- `--json` prints the self-test result as JSON
+- `--file FILE` writes the output to a file instead of stdout
+- the command returns exit code `0` when the self-test succeeds and `1` when problems are reported
 
-- plain text output to stdout
-- JSON output for commands that offer `--json`
-- file output for commands such as `selftest --file`
-- persisted JSON and CSV files through the `run` workflow
+### 5.3 `checkempty`
 
-Logging behavior:
+Checks whether the cuvette holder is empty.
 
-- with `--debug`, errors are shown on stderr with traceback
-- otherwise logs are written to `evidense.log` in the working directory
+```text
+python -m hse.evifluor checkempty
+```
 
-For `run` and `kit`, the working directory defaults to the current directory.
+It prints:
 
-## 6. Typical Examples
+- `Empty` if the cuvette holder is empty
+- `Not empty` otherwise
+
+The command returns exit code `0` for `Empty` and `1` for `Not empty`.
+
+### 5.4 `run`
+
+Performs a guided workflow on top of the Python `Run` implementation.
+
+Supported forms:
+
+```text
+python -m hse.evifluor run [OPTIONS] init NR_OF_STD_LOW NR_OF_STD_HIGH CONCENTRATION
+python -m hse.evifluor run [OPTIONS] measure [COMMENT]
+python -m hse.evifluor run [OPTIONS] export
+```
+
+Run options:
+
+- `--working-dir DIR`
+- `--file FILE`
+- `--kit NAME` for `run init` only, default `Default`
+- `--settling_time SECONDS` for `run init` only, optional
+- `--no-air` for `run init` only
+
+Behavior:
+
+- `init` initializes a run state and selects the measurement file
+- `init --kit NAME` selects the predefined kit preset used for result calculation and timing
+- `init --settling_time SECONDS` overrides the kit-specific wait time before sample measurements
+- `init --no-air` initializes a run that skips air measurements and stores sample-only entries
+- `measure` advances the workflow state machine by one step
+- `export` creates a CSV file from the active run JSON file
+
+Supported kit names are listed in [Kit Reference](./kit.md), section 2.
+
+## 6. Output and Files
+
+The Python CLI uses:
+
+- plain text output for operational commands
+- JSON output for `info --json` and `selftest --json`
+- JSON files for persisted run data
+- CSV files for exported run data
+- a log file named `evifluor.log` in the working directory unless `--debug` is used
+
+## 7. Typical Examples
 
 Query device information:
 
-```bash
-python -m hse.evidense --device SN0010 info
+```text
+python -m hse.evifluor info
+python -m hse.evifluor info --json
 ```
 
-Run a self-test and print JSON:
+Run a self-test:
 
-```bash
-python -m hse.evidense --device SN0010 selftest --json
+```text
+python -m hse.evifluor selftest --json
 ```
 
-Check whether the cuvette guide is empty:
+Check the cuvette holder state:
 
-```bash
-python -m hse.evidense --device SN0010 checkempty
+```text
+python -m hse.evifluor checkempty
 ```
 
-Execute the same blank-and-sample workflow via the CLI:
+Initialize and use a guided run:
 
 ```bash
-python -m hse.evidense run --working-dir .\data init 2
-# The liquid handler aspirates at least 10 uL from the current blank or sample well.
+python -m hse.evifluor run init 1 1 10 --kit Default
 # The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
-# Start the baseline measurement for blank 1.
-python -m hse.evidense run --working-dir .\data measure
-# Move the cuvette into the cuvette guide and start the air measurement for blank 1.
-python -m hse.evidense run --working-dir .\data measure
-# Dispense the liquid into the cuvette and start the sample measurement for blank 1.
-python -m hse.evidense run --working-dir .\data measure "blank 1"
+python -m hse.evifluor checkempty
+# Move the empty cuvette into the cuvette guide and start the air measurement.
+python -m hse.evifluor run measure
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "std high 1"
 # Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
 
-# Repeat the same sequence for blank 2.
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure "blank 2"
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Move the empty cuvette into the cuvette guide and start the air measurement.
+python -m hse.evifluor run measure
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "std low 1"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
 
-# Repeat the same sequence for sample 1.
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure "sample 1"
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Move the empty cuvette into the cuvette guide and start the air measurement.
+python -m hse.evifluor run measure
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "sample 1"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
 
-# Repeat the same sequence for sample 2.
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure
-python -m hse.evidense run --working-dir .\data measure "sample 2"
-python -m hse.evidense run --working-dir .\data export
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Move the empty cuvette into the cuvette guide and start the air measurement.
+python -m hse.evifluor run measure
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "sample 2"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+python -m hse.evifluor run export
 ```
 
-## 7. Relationship to the Low-Level API
+Initialize a run with a different predefined kit:
 
-The CLI is useful for scripting and operational workflows.
-For application integration and explicit measurement handling, use the low-level Python API described in [Python Low-Level API](./python-low-level.md).
+```bash
+python -m hse.evifluor run init 1 1 10 --kit qubit_br
+```
 
-[cli-module-api]: https://hseag.github.io/evi-test/pre-release/doc/api/python/hse.evidense.cli.html
-[cli-main-api]: https://hseag.github.io/evi-test/pre-release/doc/api/python/hse.evidense.cli.html#hse.evidense.cli.main
-[main-module-api]: https://hseag.github.io/evi-test/pre-release/doc/api/python/hse.evidense.__main__.html
+Initialize a run with an explicit settling time override:
+
+```bash
+python -m hse.evifluor run init 1 1 10 --settling_time 0.0
+```
+
+Initialize and use a guided no-air run:
+
+```bash
+python -m hse.evifluor run init 1 1 10 --no-air
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "std high 1"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "std low 1"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "sample 1"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+
+# The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+python -m hse.evifluor checkempty
+# Dispense the liquid into the cuvette and start the sample measurement.
+python -m hse.evifluor run measure "sample 2"
+# Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+python -m hse.evifluor run export
+```
+
+## 8. Notes
+
+The Python CLI is intentionally focused on common operational workflows.
+For direct library integration, use the Python high-level or low-level APIs instead.
+
+API links:
+
+- [`hse.evifluor.cli`][cli-api]
+- [`hse.evifluor.__main__`][main-api]
+
+[cli-api]: https://hseag.github.io/evifluor/pre-release/doc/api/python/hse.evifluor.cli.html
+[main-api]: https://hseag.github.io/evifluor/pre-release/doc/api/python/modules.html

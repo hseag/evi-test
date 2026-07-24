@@ -1,45 +1,44 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evibase.h"
+#include "common/evibase.h"
 
 /**
- * @brief Output format options for the export command.
+ * @brief Describes the available export formats.
  */
 typedef enum
 {
-    MODE_RAW,         /**< Export raw measurement snapshots. */
-    MODE_MEASUREMENT  /**< Export processed measurement results. */
-} Mode_t;
+    MODE_RAW,         /**< Export raw readings as captured. */
+    MODE_MEASUREMENT  /**< Export calculated measurement values. */
+} ExportMode_t;
 
 /**
- * @brief Configuration parameters used by the export command.
+ * @brief Groups command line options used during export.
  */
 typedef struct
 {
-    char delimiter;        /**< Field delimiter to use for CSV output. */
-    char * filenameJson;   /**< Destination path for JSON output, or NULL to skip. */
-    char * filenameCsv;    /**< Destination path for CSV output, or NULL to skip. */
-    Mode_t mode;           /**< Export mode describing which dataset to emit. */
+    char delimiter;        /**< CSV delimiter, defaults to ';'. */
+    char * filenameJson;   /**< Optional JSON output path, owned by the caller. */
+    char * filenameCsv;    /**< Optional CSV output path, owned by the caller. */
+    ExportMode_t mode;     /**< Export mode describing the desired dataset. */
 } ExportOptions_t;
 
 /**
- * @brief Persists measurement data based on the supplied export options.
+ * @brief Implements the `export` CLI command.
  *
- * @param options Pointer to configuration describing output files, delimiter, and mode.
- * @return Error code communicating whether the export succeeded.
- */
-Error_t exportData(ExportOptions_t * options);
-
-/**
- * @brief Implements the `export` command handler.
- *
- * @param self Pointer to the device instance that owns the measurement data.
- * @param argcCmd Number of command arguments stored in `argvCmd`.
- * @param argvCmd Array of command arguments to parse.
- * @return Error code indicating success or failure.
+ * @param self Runtime context controlling the device interaction.
+ * @param argcCmd Number of command specific arguments.
+ * @param argvCmd Vector of command specific arguments.
+ * @return Error code describing command success or failure.
  */
 Error_t cmdExport(Evi_t * self, int argcCmd, char **argvCmd);
 
+/**
+ * @brief Writes measurement data according to the provided options.
+ *
+ * @param options Export configuration (filenames, mode, delimiter).
+ * @return Error code reported when writing files or gathering data.
+ */
+Error_t exportData(ExportOptions_t * options);

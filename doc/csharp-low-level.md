@@ -14,13 +14,12 @@ Main objects to document:
 - [`Device`][device-api]
 - [`SingleMeasurement`][single-measurement-api]
 - [`Measurement`][measurement-api]
-- [`DeviceSettings`][device-settings-api]
 - storage-related classes such as [`StorageMeasurement`][storage-measurement-api]
 
 Import path:
 
 ```csharp
-using Hse.EviDense;
+using Hse.EviFluor;
 ```
 
 Important low-level [`Device`][device-api] members:
@@ -44,17 +43,15 @@ The following example demonstrates the full low-level workflow without [`Run`][r
 ```csharp
 using System;
 using System.Collections.Generic;
-using Hse.EviDense;
+using Hse.EviFluor;
 
 internal class Program
 {
     private static void Main()
     {
         using var device = new Device();
-        var settings = DeviceSettings.FromDevice(device);
         var storage = new StorageMeasurement();
-        storage.AddDeviceInfo(device, "low-level example");
-
+        
         Console.WriteLine($"serial: {device.SerialNumber()}");
         Console.WriteLine($"firmware: {device.FirmwareVersion()}");
 
@@ -64,60 +61,80 @@ internal class Program
             throw new InvalidOperationException($"Selftest failed with code {selftest.Result}");
         }
 
-        Measurement AcquireMeasurement(string comment)
+        static Measurement AcquireFirstMeasurement(Device device)
         {
-            // The liquid handler aspirates at least 10 uL from the current blank or sample well.
             // The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
             if (!device.IsCuvetteHolderEmpty())
             {
                 throw new InvalidOperationException("Cuvette holder is not empty");
             }
 
-            // Start the baseline measurement.
-            SingleMeasurement baseline = device.Baseline();
-            // Move the cuvette into the cuvette guide and start the air measurement.
+            // Move the empty cuvette into the cuvette guide and start the first air measurement.
+            FirstAirMeasurementResult air = device.FirstAirMeasurement();
+            // Dispense the liquid into the cuvette and start the first sample measurement.
+            FirstSampleMeasurementResult sample = device.FirstSampleMeasurement();
+            // Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+            return new Measurement(air, sample);
+        }
+
+        var stdHigh = new List<Measurement>();
+        var stdLow = new List<Measurement>();
+        var samples = new List<Measurement>();
+
+        stdHigh.Add(AcquireFirstMeasurement(device)); // std high 1
+
+        foreach (int _ in new[] { 0 })
+        {
+            // The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+            if (!device.IsCuvetteHolderEmpty())
+            {
+                throw new InvalidOperationException("Cuvette holder is not empty");
+            }
+
+            // Move the empty cuvette into the cuvette guide and start the air measurement.
             SingleMeasurement air = device.Measure();
             // Dispense the liquid into the cuvette and start the sample measurement.
             SingleMeasurement sample = device.Measure();
             // Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
-            return new Measurement(baseline, air, sample, comment);
+            stdLow.Add(new Measurement(air, sample));
         }
 
-        var blankMeasurements = new List<Measurement>();
-        foreach (string blankName in new[] { "blank 1", "blank 2" })
+        foreach (int _ in new[] { 0, 1 })
         {
-            blankMeasurements.Add(AcquireMeasurement(blankName));
+            // The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+            if (!device.IsCuvetteHolderEmpty())
+            {
+                throw new InvalidOperationException("Cuvette holder is not empty");
+            }
+
+            // Move the empty cuvette into the cuvette guide and start the air measurement.
+            SingleMeasurement air = device.Measure();
+            // Dispense the liquid into the cuvette and start the sample measurement.
+            SingleMeasurement sample = device.Measure();
+            // Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+            samples.Add(new Measurement(air, sample));
         }
 
-        var factors = new Factors();
-        foreach (Measurement measurement in blankMeasurements)
-        {
-            factors += measurement.Factors();
-        }
-        factors /= blankMeasurements.Count;
+        Factors factors = Measurement.CalculateFactors(0.0, 10.0, stdLow, stdHigh);
 
-        foreach (Measurement measurement in blankMeasurements)
+        foreach ((string name, Measurement measurement) in new[]
         {
-            var results = measurement.Results(factors, deviceSettings: settings);
-            storage.AppendWithResults(measurement, results, measurement.Comment(), device.Logging());
-        }
-
-        var sampleMeasurements = new List<Measurement>();
-        foreach (string sampleName in new[] { "sample 1", "sample 2" })
+            ("std high 1", stdHigh[0]),
+            ("std low 1", stdLow[0]),
+            ("sample 1", samples[0]),
+            ("sample 2", samples[1]),
+        })
         {
-            sampleMeasurements.Add(AcquireMeasurement(sampleName));
-        }
-
-        foreach (Measurement measurement in sampleMeasurements)
-        {
-            var results = measurement.Results(factors, deviceSettings: settings);
-            storage.AppendWithResults(measurement, results, measurement.Comment(), device.Logging());
+            storage.AppendWithResults(measurement, measurement.GetResults(factors), name, device.Logging());
         }
 
         storage.Save("run_data.json");
     }
 }
 ```
+
+This example uses two high standards, two low standards, and two samples for clarity.
+The same pattern scales directly to other counts: first collect all `std high` measurements, then all `std low` measurements, then the samples, while keeping the low-level sequence `FirstAirMeasurement()`, `FirstSampleMeasurement()`, and then repeated `Measure()` / `Measure()` pairs.
 
 ## 4. Opening a Device
 
@@ -151,10 +168,10 @@ string firmwareVersion = device.FirmwareVersion();
 string productionNumber = device.ProductionNumber();
 ```
 
-The library version can be queried separately with [`Device.LibraryVersion`][device-libraryversion-api]:
+The library version can be queried separately with [`device.LibraryVersion`][device-libraryversion-api]:
 
 ```csharp
-string libraryVersion = Device.LibraryVersion;
+string libraryVersion = device.LibraryVersion;
 ```
 
 ## 6. Running a Self-Test
@@ -169,32 +186,21 @@ The returned [`SelfTestResult`][selftestresult-api] object provides:
 
 - [`result.Result`][selftestresult-result-api]
 - [`result.HasProblems()`][selftestresult-hasproblems-api]
-- per-condition helpers such as [`HasProblemWithILed230()`][selftestresult-hasproblemwithiled230-api] or [`HasProblemWithSample260()`][selftestresult-hasproblemwithsample260-api]
-
-Example:
-
-```csharp
-SelfTestResult result = device.SelfTest();
-if (result.HasProblems())
-{
-    throw new InvalidOperationException($"Selftest failed with code {result.Result}");
-}
-```
+- helper methods such as [`HasProblemWithCommunication()`][selftestresult-hasproblemwithcommunication-api]
 
 ## 7. Acquiring Raw Measurements
 
-The explicit low-level measurement workflow is:
+The explicit low-level workflow for `evifluor` is typically:
 
-1. [`Baseline()`][device-baseline-api] with an empty cuvette guide
-2. [`Measure()`][device-measure-api] for the air measurement
-3. [`Measure()`][device-measure-api] for the sample measurement
+1. [`FirstAirMeasurement()`][device-firstairmeasurement-api]
+2. [`FirstSampleMeasurement()`][device-firstsamplemeasurement-api]
+3. repeated [`Measure()`][device-measure-api] calls for follow-up air and sample acquisitions
 
 Example:
 
 ```csharp
-SingleMeasurement baseline = device.Baseline();
-SingleMeasurement air = device.Measure();
-SingleMeasurement sample = device.Measure();
+FirstAirMeasurementResult air = device.FirstAirMeasurement();
+FirstSampleMeasurementResult sample = device.FirstSampleMeasurement();
 ```
 
 You can check the cuvette holder state before starting with [`device.IsCuvetteHolderEmpty()`][device-iscuvetteholderempty-api]:
@@ -203,62 +209,38 @@ You can check the cuvette holder state before starting with [`device.IsCuvetteHo
 bool empty = device.IsCuvetteHolderEmpty();
 ```
 
-Each [`SingleMeasurement`][single-measurement-api] contains four wavelength channels:
-
-- 230 nm
-- 260 nm
-- 280 nm
-- 340 nm
-
 ## 8. Building a `Measurement`
 
-Create a higher-level [`Measurement`][measurement-api] object from the three acquisitions:
+Create a higher-level [`Measurement`][measurement-api] object from the acquisitions:
 
 ```csharp
-var measurement = new Measurement(baseline, air, sample, "sample A");
+var measurement = new Measurement(air, sample, "sample A");
 ```
 
-This separates raw acquisition from result calculation and storage.
+Or from explicit air and sample measurements:
+
+```csharp
+SingleMeasurement airMeasurement = device.Measure();
+SingleMeasurement sampleMeasurement = device.Measure();
+var measurement = new Measurement(airMeasurement, sampleMeasurement, "sample B");
+```
 
 ## 9. Calculating Results
 
-Absorbance values can be calculated with [`measurement.Absorbance()`][measurement-absorbance-api]:
+Calculated assay results can be calculated with [`measurement.GetResults(...)`][measurement-results-api]:
 
 ```csharp
-var absorbance = measurement.Absorbance();
-```
-
-Calculated assay results can be calculated with [`measurement.Results(...)`][measurement-results-api]:
-
-```csharp
-var settings = DeviceSettings.FromDevice(device);
-var factors = new Factors();
-var results = measurement.Results(factors, deviceSettings: settings);
+Factors factors = Measurement.CalculateFactors(0.0, 10.0, stdLowMeasurements, stdHighMeasurements);
+Results results = measurement.GetResults(factors);
 ```
 
 Notes:
 
-- wavelength correction may depend on [`DeviceSettings`][device-settings-api]
 - the low-level API keeps factor handling explicit
-- in a production workflow, correction factors typically come from blank measurements, not from the current sample
+- in a production workflow, correction factors typically come from standards, not from the current sample
 - this is the main difference from [`Run`][run-api], which hides these steps
 
-## 10. Reading Device Settings
-
-Read settings from the connected device with [`DeviceSettings.FromDevice(device)`][device-settings-fromdevice-api]:
-
-```csharp
-var settings = DeviceSettings.FromDevice(device);
-```
-
-The most relevant values for the user manual are:
-
-- center wavelength for 260 nm
-- center wavelength for 280 nm
-
-These settings can influence corrected result calculation.
-
-## 11. Persisting Data
+## 10. Persisting Data
 
 Use [`StorageMeasurement`][storage-measurement-api] for persistence:
 
@@ -269,22 +251,13 @@ storage.AppendWithResults(measurement, results, "sample A", device.Logging());
 storage.Save("run_data.json");
 ```
 
-Supported operations include:
-
-- create a new storage container
-- load a storage file from JSON
-- add device metadata
-- append measurements with or without results
-- save as JSON
-- export JSON data as CSV
-
 CSV export example with [`StorageMeasurement.ExportAsCsv(...)`][storage-measurement-exportascsv-api]:
 
 ```csharp
 StorageMeasurement.ExportAsCsv("run_data.json");
 ```
 
-## 12. Error Handling and Cleanup
+## 11. Error Handling and Cleanup
 
 The C# API uses exceptions for communication and workflow failures.
 
@@ -301,34 +274,30 @@ Always dispose the [`Device`][device-api] instance:
 using var device = new Device();
 ```
 
-This is especially important for real serial devices.
-
-## 13. Notes About `Run`
+## 12. Notes About `Run`
 
 The [`Run`][run-api] class is intentionally excluded from this chapter because it abstracts away the individual device operations.
 
-[run-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Run.html
-[device-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html
-[single-measurement-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SingleMeasurement.html
-[measurement-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Measurement.html
-[device-settings-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.DeviceSettings.html
-[storage-measurement-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.StorageMeasurement.html
-[selftestresult-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SelfTestResult.html
-[device-getavailabledevices-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_GetAvailableDevices
-[device-serialnumber-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_SerialNumber
-[device-firmwareversion-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_FirmwareVersion
-[device-productionnumber-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_ProductionNumber
-[device-selftest-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_SelfTest
-[device-iscuvetteholderempty-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_IsCuvetteHolderEmpty
-[device-baseline-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_Baseline
-[device-measure-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_Measure
-[device-logging-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_Logging
-[device-libraryversion-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Device.html#Hse_EviDense_Device_LibraryVersion
-[device-settings-fromdevice-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.DeviceSettings.html#Hse_EviDense_DeviceSettings_FromDevice_Hse_EviDense_Device_
-[selftestresult-result-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SelfTestResult.html#Hse_EviDense_SelfTestResult_Result
-[selftestresult-hasproblems-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SelfTestResult.html#Hse_EviDense_SelfTestResult_HasProblems
-[selftestresult-hasproblemwithiled230-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SelfTestResult.html#Hse_EviDense_SelfTestResult_HasProblemWithILed230
-[selftestresult-hasproblemwithsample260-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.SelfTestResult.html#Hse_EviDense_SelfTestResult_HasProblemWithSample260
-[measurement-absorbance-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Measurement.html#Hse_EviDense_Measurement_Absorbance_Hse_EviDense_Quadruple_Hse_EviDense_DeviceSettings_
-[measurement-results-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.Measurement.html#Hse_EviDense_Measurement_Results_Hse_EviDense_Factors_System_Double_Hse_EviDense_DeviceSettings_
-[storage-measurement-exportascsv-api]: https://hseag.github.io/evi-test/pre-release/doc/api/csharp/api/Hse.EviDense.StorageMeasurement.html#Hse_EviDense_StorageMeasurement_ExportAsCsv_System_String_
+[run-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Run.html
+[device-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html
+[single-measurement-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.SingleMeasurement.html
+[measurement-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Measurement.html
+[storage-measurement-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.StorageMeasurement.html
+[selftestresult-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.SelfTestResult.html
+[device-getavailabledevices-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_GetAvailableDevices
+[device-serialnumber-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_SerialNumber
+[device-firmwareversion-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_FirmwareVersion
+[device-productionnumber-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_ProductionNumber
+[device-selftest-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_SelfTest
+[device-iscuvetteholderempty-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_IsCuvetteHolderEmpty
+[device-baseline-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_Baseline
+[device-measure-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_Measure
+[device-logging-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_Logging
+[device-libraryversion-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_LibraryVersion
+[device-firstairmeasurement-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_FirstAirMeasurement
+[device-firstsamplemeasurement-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Device.html#Hse_EviFluor_Device_FirstSampleMeasurement_System_Double_
+[selftestresult-result-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.SelfTestResult.html#Hse_EviFluor_SelfTestResult_Result
+[selftestresult-hasproblems-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.SelfTestResult.html#Hse_EviFluor_SelfTestResult_HasProblems
+[selftestresult-hasproblemwithcommunication-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.SelfTestResult.html#Hse_EviFluor_SelfTestResult_HasProblemWithCommunication
+[measurement-results-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.Measurement.html#Hse_EviFluor_Measurement_GetResults_Hse_EviFluor_Factors_Hse_EviFluor_IKit_
+[storage-measurement-exportascsv-api]: https://hseag.github.io/evifluor/pre-release/doc/api/csharp/api/Hse.EviFluor.StorageMeasurement.html#Hse_EviFluor_StorageMeasurement_ExportAsCsv_System_String_

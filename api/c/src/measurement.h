@@ -4,178 +4,64 @@
 #pragma once
 
 #include "singlemeasurement.h"
-#include "quadruple.h"
+#include "kit.h"
+#include "cJSON.h"
 #include <stdbool.h>
-#include <cJSON.h>
 
 #if defined(_WIN64) || defined(_WIN32)
-#include <windows.h>
 #define DLLEXPORT __declspec(dllexport)
 #else
 #define DLLEXPORT
 #endif
 
-
-#define MAX_COMMENT_LENGTH 256
-
+/**
+ * @brief Represents a data point with a concentration and corresponding value.
+ */
 typedef struct
 {
-    Quadruple_t fAbsorbanceBufferBlank;
-} Factors_t;
-
-typedef struct
-{
-    uint32_t blanksStart;
-    uint32_t blanksEnd;
-    double   cuvettePathLength;
-    double   centerWavelength280;
-
-} Parameters_t;
+    double concentration; /**< concentration value. */
+    double value; /**< measured value. */
+} Point_t;
 
 /**
- * @brief Creates a Parameters_t structure with default initialization values.
- *
- * @return Parameters_t instance containing the default calculation parameters.
+ * @brief Holds low and high calibration points used to compute concentrations.
  */
-DLLEXPORT Parameters_t parametersCreate();
+typedef struct
+{
+    Point_t stdLow;  /**< Measurement collected at the low concentration standard. */
+    Point_t stdHigh; /**< Measurement collected at the high concentration standard. */
+    double measurementStdLow; /**< Averaged low-standard signal used as baseline in sample-only mode. */
+    int algorithm; /**< Measurement algorithm used for calculation. */
+} Factors_t;
+
+typedef enum
+{
+    MeasurementAlgorithmV1 = 0, /**< Calculates using air and sample values. */
+    MeasurementAlgorithmV2 = 1, /**< Calculates using sample-only values. */
+} MeasurementAlgorithm_t;
 
 /**
  * @struct Measurement_t
- * @brief Represents a measurement with baseline, air, and sample values.
+ * @brief Represents a measurement with air and sample values.
  *
- * This structure contains three single measurements (baseline, air, and sample) and an optional comment.
+ * This structure contains two single measurements (air and sample).
  */
-
 typedef struct
 {
-    SingleMeasurement_t baseline; /**< Baseline measurement. */
+    bool hasAir;               /**< True when the air measurement is present. */
     SingleMeasurement_t air;      /**< Air measurement. */
     SingleMeasurement_t sample;   /**< Sample measurement. */
-    char comment[MAX_COMMENT_LENGTH]; /**< Comment associated with the measurement. */
 } Measurement_t;
 
 /**
  * @brief Initializes a Measurement_t structure with given values.
  *
- * @param baseline The baseline measurement.
  * @param air The air measurement.
  * @param sample The sample measurement.
- * @param comment A string containing a comment (null-terminated).
  * @return An initialized Measurement_t structure.
  */
-DLLEXPORT Measurement_t measurement_init(SingleMeasurement_t baseline, SingleMeasurement_t air, SingleMeasurement_t sample, const char * comment);
-
-/**
- * @brief Computes the correction air to blank.
- *
- * @param self Pointer to the Measurement_t structure.
- * @return The correction factor as a Quadruple_t.
- */
-DLLEXPORT Quadruple_t measurement_factorAbsorbanceBufferBlank(const Measurement_t * self);
-
-
-/**
- * @brief Computes the dsDNA concentration based on the measurement.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank.
- * @param cuvettePathLength Pointer to cuvette path length. If NULL, a default value is used.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The dsDNA concentration.
- */
-DLLEXPORT double measurement_dsDNA(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const double * cuvettePathLength, const Parameters_t * parameters);
-
-/**
- * @brief Computes the absorbance of the sample without A340 correction.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank. If NULL, no correction is applied.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The absorbance values for all four channels.
- */
-DLLEXPORT Quadruple_t measurement_absorbance(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Returns the 230 nm absorbance without A340 correction.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank. If NULL, no correction is applied.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The absorbance at 230 nm.
- */
-DLLEXPORT double measurement_a230(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Returns the 260 nm absorbance without A340 correction.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank. If NULL, no correction is applied.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The absorbance at 260 nm.
- */
-DLLEXPORT double measurement_a260(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Returns the 280 nm absorbance without A340 correction.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank. If NULL, no correction is applied.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The absorbance at 280 nm.
- */
-DLLEXPORT double measurement_a280(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Returns the 340 nm absorbance without A340 correction.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank. If NULL, no correction is applied.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The absorbance at 340 nm.
- */
-DLLEXPORT double measurement_a340(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Computes the ssDNA concentration based on the measurement.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank.
- * @param cuvettePathLength Pointer to cuvette path length. If NULL, a default value is used.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The ssDNA concentration.
- */
-DLLEXPORT double measurement_ssDNA(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const double * cuvettePathLength, const Parameters_t * parameters);
-
-/**
- * @brief Computes the ssRNA concentration based on the measurement.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank.
- * @param cuvettePathLength Pointer to cuvette path length. If NULL, a default value is used.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The ssRNA concentration.
- */
-DLLEXPORT double measurement_ssRNA(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const double * cuvettePathLength, const Parameters_t * parameters);
-
-/**
- * @brief Computes the 260/230 purity ratio of the sample.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank.
- * @param parameters Optional device-specific parameters used for purity correction.
- * @return The 260/230 purity ratio.
- */
-DLLEXPORT double measurement_purityRatio260_230(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
-
-/**
- * @brief Computes the 260/280 purity ratio of the sample.
- *
- * @param self Pointer to the Measurement_t structure.
- * @param factorAbsorbanceBufferBlank Correction value for air to blank.
- * @param parameters Optional device-specific parameters used for purity correction.
-  * @return The 260/280 purity ratio.
- */
-DLLEXPORT double measurement_purityRatio260_280(const Measurement_t * self, const Quadruple_t * factorAbsorbanceBufferBlank, const Parameters_t * parameters);
+DLLEXPORT Measurement_t measurement_init(SingleMeasurement_t air, SingleMeasurement_t sample);
+DLLEXPORT Measurement_t measurement_initNoAir(SingleMeasurement_t sample);
 
 /**
  * @brief Prints the contents of a Measurement_t structure to the specified stream.
@@ -187,50 +73,76 @@ DLLEXPORT double measurement_purityRatio260_280(const Measurement_t * self, cons
 DLLEXPORT void measurement_print(const Measurement_t * self, FILE * stream, bool newLine);
 
 /**
- * @brief Calculates the absorbance value based on a given baseline and measurement.
+ * @brief Returns the difference between air- and sample measurement.
  *
- * @param baseline Pointer to the baseline measurement.
- * @param measurement Pointer to the actual measurement.
- * @param correctionFactor Pointer to the correction factor applied to the measurement.
- * @return The computed absorbance value as a Quadruple_t.
+ * @param self Pointer to the Measurement_t structure.
+ * @return Difference between air- and sample measurement.
  */
-DLLEXPORT Quadruple_t measurement_calculateAbsorbance(const SingleMeasurement_t * baseline, const SingleMeasurement_t * measurement, const Quadruple_t * correctionFactor);
+DLLEXPORT double measurement_value(const Measurement_t * self, MeasurementAlgorithm_t algorithm);
 
 /**
- * @brief Populates a Measurement_t structure from a JSON node.
+ * @brief Calculates the RFU used as input for concentration calculation.
  *
- * @param node JSON object containing the serialized measurement data.
- * @param measurement Pointer to the structure that will receive the parsed values.
- * @return true when parsing succeeds; false if required fields are missing or invalid.
+ * @param self Pointer to the Measurement_t structure.
+ * @param factors Factors that define algorithm and baseline subtraction.
+ * @return RFU value.
  */
-DLLEXPORT bool measurement_fromJson(cJSON * node, Measurement_t * measurement);
+DLLEXPORT double measurement_rfu(const Measurement_t * self, const Factors_t * factors);
 
 /**
- * @brief Applies optional wavelength adjustments from a JSON root object to parameters.
+ * @brief Returns the difference between air- and sample measurement.
  *
- * Reads ``adjustments.centerwavelengths.280`` when present and keeps defaults otherwise.
- *
- * @param node JSON root object containing optional adjustments.
- * @param parameters Pointer to the parameters to update.
- * @return true if a 280 nm center wavelength was found and applied; false otherwise.
+ * @param concentrationLow The known low concentration standard.
+ * @param concentrationHigh The known high concentration standard.
+ * @param measurementStdLow The measurement corresponding to the low concentration.
+ * @param measurementStdHigh The measurement corresponding to the high concentration.
+ * @return A Factors_t object containing calculated correction factors.
  */
-DLLEXPORT bool parametersApplyAdjustmentsFromJson(cJSON * node, Parameters_t * parameters);
+DLLEXPORT Factors_t measurement_calculateFactors(double concentrationLow, double concentrationHigh, const Measurement_t *measurementStdLow, const Measurement_t *measurementStdHigh);
 
 /**
- * @brief Calculates measurement factors using the provided parameters.
+ * @brief Calculates the concentration.
  *
- * @param oMeasurments JSON array of measurement entries.
- * @param parameters Pointer to the calculation parameters.
- * @param factors Pointer to the structure that receives the computed factors.
- * @return true if the factors were computed successfully; false otherwise.
+ * @param self Pointer to the Measurement_t structure.
+ * @param factors Factor to calculate the concentration.
+ * @return Concentration.
  */
-DLLEXPORT bool measurement_calculateFactors(cJSON *oMeasurments, const Parameters_t * parameters, Factors_t * factors);
+DLLEXPORT double measurement_concentration(const Measurement_t * self, const Factors_t * factors);
+DLLEXPORT double measurement_concentrationWithKit(const Measurement_t * self, const Factors_t * factors, const Kit_t * kit);
 
 /**
- * @brief Calculates derived measurement values from the provided JSON data.
+ * @brief Parses a JSON object to construct a measurement, returning validity.
  *
- * @param oMeasurements JSON array containing the measurement entries to process.
- * @param parameters Pointer to the calculation parameters.
- * @return true if all derived values were computed successfully; false otherwise.
+ * When @p valid is provided it is set to false if mandatory members are
+ * missing or invalid. The returned value is unspecified if parsing fails.
+ *
+ * @param obj JSON object to parse.
+ * @param valid Optional flag that receives the parsing result.
+ * @return Measurement derived from the JSON payload.
  */
-DLLEXPORT bool measurement_calculate(cJSON * oMeasurements, const Parameters_t * parameters);
+DLLEXPORT Measurement_t measurement_fromJsonValid(cJSON * obj, bool * valid);
+
+/**
+ * @brief Attempts to populate a measurement structure from JSON.
+ *
+ * @param obj JSON object to parse.
+ * @param measurement Output parameter that receives the parsed content.
+ * @return true when parsing succeeds, otherwise false.
+ */
+DLLEXPORT bool measurement_fromJson(cJSON * obj, Measurement_t * measurement);
+
+/**
+ * @brief Calculates concentrations for a collection of measurements.
+ *
+ * The function reads the JSON array in @p oMeasurements, applies the provided
+ * calibration points and writes the concentration back into the JSON objects.
+ *
+ * @param oMeasurements JSON array with measurements to process.
+ * @param concentrationLow Known concentration for the low standard.
+ * @param concentrationHigh Known concentration for the high standard.
+ * @param nrOfStdLow Number of low standard measurements to average.
+ * @param nrOfStdLHigh Number of high standard measurements to average.
+ * @return true on success when all data could be processed.
+ */
+DLLEXPORT bool measurement_calculate(cJSON * oMeasurements, double concentrationLow, double concentrationHigh, int nrOfStdLow, int nrOfStdLHigh, MeasurementAlgorithm_t algorithm);
+DLLEXPORT bool measurement_calculateWithKit(cJSON * oMeasurements, double concentrationLow, double concentrationHigh, int nrOfStdLow, int nrOfStdLHigh, MeasurementAlgorithm_t algorithm, const Kit_t * kit);

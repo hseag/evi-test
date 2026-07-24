@@ -47,13 +47,13 @@ unset(_cmake_expected_targets)
 
 
 # The installation prefix configured by this project.
-set(_IMPORT_PREFIX "/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu")
+set(_IMPORT_PREFIX "/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu")
 
 # Create imported target cjson
 add_library(cjson SHARED IMPORTED)
 
 set_target_properties(cjson PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include"
+  INTERFACE_INCLUDE_DIRECTORIES "/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include"
   INTERFACE_LINK_LIBRARIES "m"
 )
 

@@ -1,6 +1,6 @@
-# eviDense UV APIs
+# eviFluor Duo APIs
 
-This directory contains the software interfaces for integrating the eviDense UV Photometer into customer applications, automation workflows, and service tooling.
+This directory contains the software interfaces for integrating the eviFluor Duo Fluorometer into customer applications, automation workflows, and service tooling.
 
 ## Quick Start
 

@@ -4,9 +4,10 @@
 #include "cmdrun.h"
 #include "cmdsave.h"
 #include "commonindex.h"
-#include "evidenseindex.h"
 #include "measurement.h"
+#include "kit.h"
 #include "cmdexport.h"
+#include "verification.h"
 #include "cJSON.h"
 #include "json.h"
 #include "dict.h"
@@ -28,16 +29,24 @@ typedef struct
 {
     char * filename_state;
 	char * filename_data;
+    bool noAir;
+    bool hasSettlingTimeOverride;
+    double settlingTimeOverride;
+    Kit_t kit;
 } Options_t;
 
 typedef enum
 {
-    StateBaseline    = 0,
-    StateAir         = 1,
-    StateSample      = 2,
+    StateFirstAir    = 0,
+    StateFirstSample = 1,
+    StateAir         = 2,
+    StateSample      = 3,
 } State_t;
 
-#define DICT_CONTEXT_NROFBLANKS           "nrOfBlanks"
+#define DICT_CONTEXT_NROFSTDHIGH          "nrOfStdHigh"
+#define DICT_CONTEXT_NROFSTDLOW           "nrOfStdLow"
+#define DICT_CONTEXT_CONCENTRATIONSTDHIGH "concentrationStdHigh"
+#define DICT_CONTEXT_CONCENTRATIONSTDLOW  "concentrationStdLow"
 #define DICT_CONTEXT_STATE                "state"
 #define DICT_CONTEXT_DATA_FILE            "dataFile"
 #define DICT_CONTEXT_COUNT                "count"
@@ -46,9 +55,22 @@ typedef enum
 #define DICT_CONTEXT_LOG_TEXT             "text"
 
 #define DICT_CONTEXT_DATA                 "data"
+#define DICT_CONTEXT_DATA_FIRST_AIR       "firstAir"
+#define DICT_CONTEXT_VERIFICATION         "verification"
 
-#define DICT_CONTEXT_DATA_BASELINE        "baseline"
+#define DICT_CONTEXT_DATA_FIRST_AIR_MIN   "min"
+#define DICT_CONTEXT_DATA_FIRST_AIR_MAX   "max"
+
 #define DICT_CONTEXT_DATA_AIR             "air"
+#define DICT_CONTEXT_NO_AIR               "noAir"
+#define DICT_CONTEXT_KIT                  "kit"
+#define DICT_CONTEXT_SETTLING_TIME        "settlingTime"
+
+#define RUN_INIT_NO_AIR_OPTION            "--no-air"
+#define RUN_INIT_KIT_OPTION               "--kit="
+#define RUN_INIT_SETTLING_TIME_OPTION     "--settling-time="
+
+
 
 static void loggingClear(Evi_t * self)
 {
@@ -188,14 +210,44 @@ static int contextGetCount(cJSON * context)
     return (int)contextGetNumber(context, DICT_CONTEXT_COUNT);
 }
 
-static void contextSetNrOfBlanks(cJSON * context, int nrOfBlanks)
+static void contextSetNrOfStdHigh(cJSON * context, int nrOfStdHigh)
 {
-    contextSetNumber(context, DICT_CONTEXT_NROFBLANKS, nrOfBlanks);
+    contextSetNumber(context, DICT_CONTEXT_NROFSTDHIGH, nrOfStdHigh);
 }
 
-static int contextGetNrOfBlanks(cJSON * context)
+static int contextGetNrOfStdHigh(cJSON * context)
 {
-    return contextGetNumber(context, DICT_CONTEXT_NROFBLANKS);
+    return contextGetNumber(context, DICT_CONTEXT_NROFSTDHIGH);
+}
+
+static void contextSetNrOfStdLow(cJSON * context, int nrOfStdLow)
+{
+    contextSetNumber(context, DICT_CONTEXT_NROFSTDLOW, nrOfStdLow);
+}
+
+static int contextGetNrOfStdLow(cJSON * context)
+{
+    return contextGetNumber(context, DICT_CONTEXT_NROFSTDLOW);
+}
+
+static void contextSetConcentrationStdHigh(cJSON * context, double concentrationStdHigh)
+{
+    contextSetNumber(context, DICT_CONTEXT_CONCENTRATIONSTDHIGH, concentrationStdHigh);
+}
+
+static double contextGetConcentrationStdHigh(cJSON * context)
+{
+    return contextGetNumber(context, DICT_CONTEXT_CONCENTRATIONSTDHIGH);
+}
+
+static void contextSetConcentrationStdLow(cJSON * context, double concentrationStdLow)
+{
+    contextSetNumber(context, DICT_CONTEXT_CONCENTRATIONSTDLOW, concentrationStdLow);
+}
+
+static double contextGetConcentrationStdLow(cJSON * context)
+{
+    return contextGetNumber(context, DICT_CONTEXT_CONCENTRATIONSTDLOW);
 }
 
 static void contextSetState(cJSON * context, int state)
@@ -216,6 +268,107 @@ static void contextSetDataFile(cJSON * context, const char * file)
 static const char *  contextGetDataFile(cJSON * context)
 {
     return contextGetString(context, DICT_CONTEXT_DATA_FILE);
+}
+
+static void contextSetNoAir(cJSON * context, bool noAir)
+{
+    contextSetNumber(context, DICT_CONTEXT_NO_AIR, noAir ? 1 : 0);
+}
+
+static bool contextGetNoAir(cJSON * context)
+{
+    return contextGetNumber(context, DICT_CONTEXT_NO_AIR) != 0;
+}
+
+static void contextSetKit(cJSON * context, const Kit_t * kit)
+{
+    cJSON * obj = cJSON_GetObjectItem(context, DICT_CONTEXT_KIT);
+    if(obj == NULL)
+    {
+        cJSON_AddItemToObject(context, DICT_CONTEXT_KIT, kit_toJson(kit));
+    }
+    else
+    {
+        cJSON_ReplaceItemInObject(context, DICT_CONTEXT_KIT, kit_toJson(kit));
+    }
+}
+
+static Kit_t contextGetKit(cJSON * context)
+{
+    Kit_t kit = kit_default();
+    cJSON * obj = cJSON_GetObjectItem(context, DICT_CONTEXT_KIT);
+    if(obj != NULL)
+    {
+        if(!kit_fromJson(obj, &kit))
+        {
+            kit = kit_default();
+        }
+    }
+    return kit;
+}
+
+static void contextSetSettlingTime(cJSON * context, double settlingTime)
+{
+    contextSetNumber(context, DICT_CONTEXT_SETTLING_TIME, settlingTime);
+}
+
+static double contextGetSettlingTime(cJSON * context)
+{
+    cJSON * obj = cJSON_GetObjectItem(context, DICT_CONTEXT_SETTLING_TIME);
+    if(obj == NULL)
+    {
+        return contextGetKit(context).settlingTime;
+    }
+    return cJSON_GetNumberValue(obj);
+}
+
+static void contextSetFirstAir(cJSON * context, const MeasurementFirstAir_t * firstAir)
+{
+    cJSON * oData = cJSON_GetObjectItem(context, DICT_CONTEXT_DATA);
+    if(oData == NULL)
+    {
+        oData = cJSON_CreateObject();
+        cJSON_AddItemToObject(context, DICT_CONTEXT_DATA, oData);
+    }
+
+    cJSON * oMin = singleMeasurement_toJson(&firstAir->min);
+    cJSON * oMax = singleMeasurement_toJson(&firstAir->max);
+
+
+    cJSON * oFirstAir = cJSON_GetObjectItem(oData, DICT_CONTEXT_DATA_FIRST_AIR);
+    if(oFirstAir == NULL)
+    {
+        oFirstAir = cJSON_CreateObject();
+        cJSON_AddItemToObject(oData, DICT_CONTEXT_DATA_FIRST_AIR, oFirstAir);
+        cJSON_AddItemToObject(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MIN, oMin);
+        cJSON_AddItemToObject(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MAX, oMax);
+    }
+    else
+    {
+        cJSON_ReplaceItemInObject(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MIN, oMin);
+        cJSON_ReplaceItemInObject(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MAX, oMax);
+    }
+}
+
+static void contextGetFirstAir(cJSON * context, MeasurementFirstAir_t * firstAir)
+{
+    cJSON * oData = cJSON_GetObjectItem(context, DICT_CONTEXT_DATA);
+    if(oData == NULL)
+    {
+        return;
+    }
+
+    cJSON * oFirstAir = cJSON_GetObjectItem(oData, DICT_CONTEXT_DATA_FIRST_AIR);
+    if(oFirstAir == NULL)
+    {
+        return;
+    }
+
+    cJSON * oMin = cJSON_GetObjectItem(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MIN);
+    cJSON * oMax = cJSON_GetObjectItem(oFirstAir, DICT_CONTEXT_DATA_FIRST_AIR_MAX);
+
+    singleMeasurement_fromJson(oMin, &firstAir->min);
+    singleMeasurement_fromJson(oMax, &firstAir->max);
 }
 
 static void contextSetSingleMeasurement(cJSON * context, const char * string, const SingleMeasurement_t * singleMeasurement)
@@ -260,15 +413,43 @@ static void contextGetSingleMeasurement(cJSON * context, const char * string, Si
     singleMeasurement_fromJson(oSingleMeasurement, singleMeasurement);
 }
 
-static void dataAddMeasurement(Evi_t* self, cJSON * context, const SingleMeasurement_t * baseline, const SingleMeasurement_t * air, const SingleMeasurement_t * sample, const char * comment, bool append)
+static Verification_t contextGetVerification(cJSON * context)
+{
+    cJSON * obj = cJSON_GetObjectItem(context, DICT_CONTEXT_VERIFICATION);
+    if(obj == NULL)
+    {
+        return verification_init();
+    }
+    else
+    {
+        return verification_fromJson(obj);
+    }
+}
+
+static void contextSetVerification(cJSON * context, const Verification_t * verification)
+{
+    cJSON * obj = cJSON_GetObjectItem(context, DICT_CONTEXT_VERIFICATION);
+    if(obj == NULL)
+    {
+        cJSON_AddItemToObject(context, DICT_CONTEXT_VERIFICATION, verification_toJson(verification));
+    }
+    else
+    {
+        cJSON_ReplaceItemInObject(context, DICT_CONTEXT_VERIFICATION, verification_toJson(verification));
+    }
+}
+
+static void dataAddMeasurement(Evi_t* self, cJSON * context, const SingleMeasurement_t * air, const SingleMeasurement_t * sample, const char * comment, bool append)
 {
     const char * file = contextGetDataFile(context);
     cJSON * data = dataLoadJson(self, file, append);
 
     cJSON* oMeasurements = cJSON_GetObjectItem(data, DICT_MEASUREMENTS);
     cJSON* obj = cJSON_CreateObject();
-    cJSON_AddItemToObject(obj, DICT_BASELINE, singleMeasurement_toJson(baseline));
-    cJSON_AddItemToObject(obj, DICT_AIR, singleMeasurement_toJson(air));
+    if(air != NULL)
+    {
+        cJSON_AddItemToObject(obj, DICT_AIR, singleMeasurement_toJson(air));
+    }
     cJSON_AddItemToObject(obj, DICT_SAMPLE, singleMeasurement_toJson(sample));
 
     {
@@ -300,108 +481,98 @@ static void dataAddMeasurement(Evi_t* self, cJSON * context, const SingleMeasure
         cJSON_AddItemToObject(obj, DICT_COMMENT, cJSON_CreateString(comment));
     }
 
+    Verification_t verification = contextGetVerification(context);
+    if(verification_failed(&verification))
+    {
+        cJSON_AddItemToObject(obj, DICT_ERRORS, verification_toJson(&verification));
+    }
+
     cJSON_AddItemToArray(oMeasurements, obj);
 
     json_saveToFile(file, data);
     cJSON_Delete(data);
 }
 
-static void dataSetNumber(cJSON * parent, const char * key, double value)
+static char * createComment(cJSON * context)
 {
-    cJSON * item = cJSON_GetObjectItem(parent, key);
+    int count = contextGetCount(context);
+    int nrOfStdHigh = contextGetNrOfStdHigh(context);
+    int nrOfStdLow = contextGetNrOfStdLow(context);
+    double concentrationStdHigh = contextGetConcentrationStdHigh(context);
+    double concentrationStdLow = contextGetConcentrationStdLow(context);
 
-    if(item == NULL)
+    if(count < nrOfStdHigh)
     {
-        cJSON_AddItemToObject(parent, key, cJSON_CreateNumber(value));
+        return malloc_printf("STD High #%d %.1f ng/ul", count + 1, concentrationStdHigh);
+    }
+    else if(count < nrOfStdHigh + nrOfStdLow)
+    {
+        return malloc_printf("STD Low #%d %.1f ng/ul", count - nrOfStdHigh + 1, concentrationStdLow);
     }
     else
     {
-        cJSON_SetNumberValue(item, value);
+        return malloc_printf("Sample #%d", count - nrOfStdHigh - nrOfStdLow + 1);
     }
 }
 
-static Error_t dataInitializeFile(Evi_t * self, const char * file)
+static void delayForSettlingTime(cJSON * context)
 {
-    cJSON * json = dataLoadJson(self, file, false);
-
-    if(json == NULL)
+    double settlingTime = contextGetSettlingTime(context);
+    if(settlingTime > 0.0)
     {
-        return ERROR_EVI_INVALID_PARAMETER;
+        Sleep((uint32_t)(settlingTime * 1000.0));
     }
-
-    json_saveToFile(file, json);
-    cJSON_Delete(json);
-    return ERROR_EVI_OK;
 }
 
-static Error_t dataWriteCenterWavelength280(Evi_t * self, const char * file)
+static uint32_t stdHighTargetFromKit(const Kit_t * kit)
 {
-    Error_t ret = ERROR_EVI_OK;
-    char value[EVI_MAX_LINE_LENGTH] = {};
-    cJSON * json = NULL;
-    cJSON * adjustments = NULL;
-    cJSON * centerWavelengths = NULL;
+    double factor = DEFAULT_STD_HIGH_TARGET_SIGNAL_FACTOR;
+    if(kit != NULL && kit->hasStdHighTargetSignalFactor)
+    {
+        factor = kit->stdHighTargetSignalFactor;
+    }
 
-    ret = eviGet(self, INDEX_LED280NM_CENTER_WAVE_LENGTH, value, sizeof(value));
+    return (uint32_t)(verification_getMaxSignal() * factor);
+}
+
+static Error_t measureFirstSampleWithKit(Evi_t * self, const Kit_t * kit, MeasurementFirstSample_t * measurement)
+{
+    Error_t ret = eviFluorAutogain(self, stdHighTargetFromKit(kit), &(measurement->autogain));
     if(ret != ERROR_EVI_OK)
     {
         return ret;
     }
 
-    json = dataLoadJson(self, file, false);
-    if(json == NULL)
-    {
-        return ERROR_EVI_INVALID_PARAMETER;
-    }
-
-    adjustments = cJSON_GetObjectItem(json, DICT_ADJUSTMENTS);
-    if(adjustments == NULL)
-    {
-        adjustments = cJSON_CreateObject();
-        cJSON_AddItemToObject(json, DICT_ADJUSTMENTS, adjustments);
-    }
-
-    centerWavelengths = cJSON_GetObjectItem(adjustments, DICT_CENTER_WAVELENGTHS);
-    if(centerWavelengths == NULL)
-    {
-        centerWavelengths = cJSON_CreateObject();
-        cJSON_AddItemToObject(adjustments, DICT_CENTER_WAVELENGTHS, centerWavelengths);
-    }
-
-    dataSetNumber(centerWavelengths, DICT_280, atof(value) / 1000.0);
-
-    json_saveToFile(file, json);
-    cJSON_Delete(json);
-
-    return ERROR_EVI_OK;
+    return eviFluorMeasure(self, &(measurement->measurement));
 }
 
-static char * createComment(cJSON * context)
+static double stdHighTargetSignalFactorForKit(const Kit_t * kit)
 {
-    int count = contextGetCount(context);
-    int nrOfBlanks = contextGetNrOfBlanks(context);
+    if(kit != NULL && kit->hasStdHighTargetSignalFactor)
+    {
+        return kit->stdHighTargetSignalFactor;
+    }
 
-    if(count < nrOfBlanks)
-    {
-        return malloc_printf("Blank #%d", count + 1);
-    }
-    else
-    {
-        return malloc_printf("Sample #%d", count - nrOfBlanks + 1);
-    }
+    return DEFAULT_STD_HIGH_TARGET_SIGNAL_FACTOR;
 }
 
 static void reCalculate(cJSON * context, Options_t * options)
 {
+    (void)options;
     cJSON *json = json_loadFromFile(contextGetDataFile(context));
     if (json != NULL)
     {
         cJSON *oMeasurements = cJSON_GetObjectItem(json, DICT_MEASUREMENTS);
-        Parameters_t  parameters = parametersCreate();
-        parametersApplyAdjustmentsFromJson(json, &parameters);
-        parameters.blanksStart = contextGetNrOfBlanks(context);
-        parameters.blanksEnd = 0;
-        bool ret = measurement_calculate(oMeasurements, &parameters);
+        Kit_t kit = contextGetKit(context);
+        bool ret = measurement_calculateWithKit(
+            oMeasurements,
+            contextGetConcentrationStdLow(context),
+            contextGetConcentrationStdHigh(context),
+            contextGetNrOfStdLow(context),
+            contextGetNrOfStdHigh(context),
+            contextGetNoAir(context) ? MeasurementAlgorithmV2 : MeasurementAlgorithmV1,
+            &kit
+        );
         if(ret == true)
         {
             json_saveToFile(contextGetDataFile(context), json);
@@ -416,32 +587,86 @@ static Error_t measure(Evi_t* self, cJSON * context, Options_t * options, const 
 
     switch (contextGetState(context))
     {
-        case StateBaseline:
+        case StateFirstAir:
         {
-            SingleMeasurement_t baseline = {};
-            ret = eviDenseBaseline(self, &baseline);
+            Verification_t verification = verification_init();
+            MeasurementFirstAir_t measurement;
+            ret = eviFluorMeasureFirstAir(self, &measurement);
             if(ret == ERROR_EVI_OK)
             {
-                contextSetSingleMeasurement(context, DICT_CONTEXT_DATA_BASELINE, &baseline);
-                fprintf(stdout, "%i %i %i %i %i %i %i %i\n", baseline.channel230.sample, baseline.channel230.reference, baseline.channel260.sample, baseline.channel260.reference, baseline.channel280.sample, baseline.channel280.reference, baseline.channel340.sample, baseline.channel340.reference);
+                verification_checkFirstAirMasurementResult(&verification, &measurement, HINTS_NONE);
+                contextSetVerification(context, &verification);
+                contextSetFirstAir(context, &measurement);
+                fprintf_s(stdout, "First air: %.03f %.03f %d %.03f %.03f %d\n", measurement.min.channel470.dark, measurement.min.channel470.value, measurement.min.channel470.ledPower, measurement.max.channel470.dark, measurement.max.channel470.value, measurement.max.channel470.ledPower);
             }
             else
             {
                 printError(ret, NULL);
             }
-            contextAddLog(context, "measure() baseline ret:%i", ret);
-            contextSetState(context, StateAir);
+            contextAddLog(context, "measure() first air ret:%i", ret);
+            contextSetState(context, StateFirstSample);
+        }
+        break;
+
+        case StateFirstSample:
+        {
+            MeasurementFirstAir_t firstAir;
+            SingleMeasurement_t air;
+            MeasurementFirstSample_t sample;
+            Kit_t kit = contextGetKit(context);
+            delayForSettlingTime(context);
+            ret = measureFirstSampleWithKit(self, &kit, &sample);
+            if(ret == ERROR_EVI_OK)
+            {
+                Verification_t verification = contextGetVerification(context);
+                verification_checkFirstSampleMeasurementResult(&verification, &sample, HINTS_NONE, stdHighTargetSignalFactorForKit(&kit));
+                contextSetVerification(context, &verification);
+                contextGetFirstAir(context, &firstAir);
+                if(contextGetNoAir(context))
+                {
+                    air = (SingleMeasurement_t){0};
+                }
+                else
+                {
+                    air = eviFluorAdjustToLedPower(&firstAir.min, &firstAir.max, sample.measurement.channel470.ledPower);
+                }
+                {
+                    char * _comment = NULL;
+                    if(comment == NULL)
+                    {
+                        _comment = createComment(context);
+                    }
+
+                    dataAddMeasurement(self, context, contextGetNoAir(context) ? NULL : &air, &sample.measurement, comment ? comment : _comment, false);
+
+                    if(_comment != NULL)
+                    {
+                        free(_comment);
+                    }
+                }
+                fprintf_s(stdout, "First sample: %.03f %.03f %d %d %d\n", sample.measurement.channel470.dark, sample.measurement.channel470.value, sample.measurement.channel470.ledPower, sample.autogain.found, sample.autogain.ledPower);
+            }
+            else
+            {
+                printError(ret, NULL);
+            }
+            contextAddLog(context, "measure() first sample ret:%i", ret);
+            contextSetState(context, contextGetNoAir(context) ? StateSample : StateAir);
+            contextSetCount(context, contextGetCount(context) + 1);
         }
         break;
 
         case StateAir:
         {
-            SingleMeasurement_t air;
-            ret = eviDenseMeasure(self, &air);
+            Verification_t verification = verification_init();
+            SingleMeasurement_t measurement;
+            ret = eviFluorMeasure(self, &measurement);
             if(ret == ERROR_EVI_OK)
             {
-                contextSetSingleMeasurement(context, DICT_CONTEXT_DATA_AIR, &air);
-                fprintf(stdout, "%i %i %i %i %i %i %i %i\n", air.channel230.sample, air.channel230.reference, air.channel260.sample, air.channel260.reference, air.channel280.sample, air.channel280.reference, air.channel340.sample, air.channel340.reference);
+                verification_checkSingleMeasurement(&verification, &measurement, HINTS_NONE, DEFAULT_STD_HIGH_TARGET_SIGNAL_FACTOR);
+                contextSetVerification(context, &verification);
+                contextSetSingleMeasurement(context, DICT_CONTEXT_DATA_AIR, &measurement);
+                fprintf_s(stdout, "Air: %.03f %.03f %d\n", measurement.channel470.dark, measurement.channel470.value, measurement.channel470.ledPower);
             }
             else
             {
@@ -454,36 +679,43 @@ static Error_t measure(Evi_t* self, cJSON * context, Options_t * options, const 
 
         case StateSample:
         {
-            SingleMeasurement_t baseline;
+            Verification_t verification = contextGetVerification(context);
             SingleMeasurement_t air;
             SingleMeasurement_t sample;
-            ret = eviDenseMeasure(self, &sample);
+            delayForSettlingTime(context);
+            ret = eviFluorMeasure(self, &sample);
 
-            contextGetSingleMeasurement(context, DICT_CONTEXT_DATA_BASELINE, &baseline);
-            contextGetSingleMeasurement(context, DICT_CONTEXT_DATA_AIR, &air);
             if(ret == ERROR_EVI_OK)
             {
+                verification_checkSingleMeasurement(&verification, &sample, HINTS_NONE, DEFAULT_STD_HIGH_TARGET_SIGNAL_FACTOR);
+                contextSetVerification(context, &verification);
+
+                if(!contextGetNoAir(context))
+                {
+                    contextGetSingleMeasurement(context, DICT_CONTEXT_DATA_AIR, &air);
+                }
+
                 char * _comment = NULL;
                 if(comment == NULL)
                 {
                     _comment = createComment(context);
                 }
 
-                dataAddMeasurement(self, context, &baseline, &air, &sample, comment ? comment : _comment, true);
+                dataAddMeasurement(self, context, contextGetNoAir(context) ? NULL : &air, &sample, comment ? comment : _comment, true);
 
                 if(_comment != NULL)
                 {
                     free(_comment);
                 }
 
-                fprintf(stdout, "%i %i %i %i %i %i %i %i\n", sample.channel230.sample, sample.channel230.reference, sample.channel260.sample, sample.channel260.reference, sample.channel280.sample, sample.channel280.reference, sample.channel340.sample, sample.channel340.reference);
+                fprintf_s(stdout, "Sample: %.03f %.03f %d\n", sample.channel470.dark, sample.channel470.value, sample.channel470.ledPower);
             }
             else
             {
                 printError(ret, NULL);
             }
             contextAddLog(context, "measure() sample ret:%i", ret);
-            contextSetState(context, StateBaseline);
+            contextSetState(context, contextGetNoAir(context) ? StateSample : StateAir);
             contextSetCount(context, contextGetCount(context) + 1);
         }
         break;
@@ -503,6 +735,7 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
     Error_t ret  = ERROR_EVI_OK;
 
     Options_t options = { 0 };
+    options.kit = kit_default();
 
     int argcCmdSave = argcCmd;
     char **argvCmdSave = argvCmd;
@@ -545,7 +778,7 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
         ret = eviGet(self, INDEX_SERIALNUMBER, value, sizeof(value));
         if (ret == ERROR_EVI_OK)
         {
-            char * file = malloc_printf("evidense-SN%s-state.json", value);
+            char * file = malloc_printf("evifluor-SN%s-state.json", value);
             options.filename_state = file;
         }
         else
@@ -564,52 +797,53 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
         {
             if(strcmp(argvCmdSave[0], "init") == 0)
             {
-                if(argcCmdSave >= 2)
+                bool noAir = false;
+                if(argcCmdSave >= 4)
                 {
-                    char sn[100] = {};
-                    bool noPurityRatio260280Correction = false;
-                    size_t j = 2;
-                    bool purityFlagSeen = false;
-                    bool noPurityFlagSeen = false;
-
-                    while(j < argcCmdSave)
+                    for(int argIndex = 4; argIndex < argcCmdSave; argIndex++)
                     {
-                        if(strcmp(argvCmdSave[j], "--no_purity_ratio_260_280_correction") == 0)
+                        if(strcmp(argvCmdSave[argIndex], RUN_INIT_NO_AIR_OPTION) == 0)
                         {
-                            noPurityRatio260280Correction = true;
-                            noPurityFlagSeen = true;
-                            j++;
+                            noAir = true;
                         }
-                        else if(strcmp(argvCmdSave[j], "--purity_ratio_260_280_correction") == 0)
+                        else if(strncmp(argvCmdSave[argIndex], RUN_INIT_KIT_OPTION, strlen(RUN_INIT_KIT_OPTION)) == 0)
                         {
-                            noPurityRatio260280Correction = false;
-                            purityFlagSeen = true;
-                            j++;
+                            if(!kit_factory(argvCmdSave[argIndex] + strlen(RUN_INIT_KIT_OPTION), &options.kit))
+                            {
+                                ret = printError(ERROR_EVI_UNKOWN_COMMAND_LINE_ARGUMENT, "Unknown kit: %s", argvCmdSave[argIndex] + strlen(RUN_INIT_KIT_OPTION));
+                                goto cleanup_context;
+                            }
+                        }
+                        else if(strncmp(argvCmdSave[argIndex], RUN_INIT_SETTLING_TIME_OPTION, strlen(RUN_INIT_SETTLING_TIME_OPTION)) == 0)
+                        {
+                            options.hasSettlingTimeOverride = true;
+                            options.settlingTimeOverride = atof(argvCmdSave[argIndex] + strlen(RUN_INIT_SETTLING_TIME_OPTION));
                         }
                         else
                         {
-                            ret = printError(ERROR_EVI_UNKOWN_COMMAND_LINE_OPTION, "Unknown option: %s\n", argvCmdSave[j]);
-                            goto exit;
+                            ret = printError(ERROR_EVI_UNKOWN_COMMAND_LINE_ARGUMENT, "Unknown run init option: %s", argvCmdSave[argIndex]);
+                            goto cleanup_context;
                         }
                     }
 
-                    if(purityFlagSeen && noPurityFlagSeen)
-                    {
-                        ret = printError(ERROR_EVI_INVALID_PARAMETER, "Conflicting options: --purity_ratio_260_280_correction and --no_purity_ratio_260_280_correction\n");
-                        goto exit;
-                    }
-
+                    char sn[100] = {};
                     context = contextCreate(context);
-                    contextSetNrOfBlanks(context, atoi(argvCmdSave[1]));
+                    contextSetNrOfStdLow(context, atoi(argvCmdSave[1]));
+                    contextSetNrOfStdHigh(context, atoi(argvCmdSave[2]));
+                    contextSetConcentrationStdHigh(context, atof(argvCmdSave[3]));
+                    contextSetConcentrationStdLow(context, 0.0);
                     contextSetCount(context, 0);
-                    contextSetState(context, StateBaseline);
+                    contextSetNoAir(context, noAir);
+                    contextSetKit(context, &options.kit);
+                    contextSetSettlingTime(context, options.hasSettlingTimeOverride ? options.settlingTimeOverride : options.kit.settlingTime);
+                    contextSetState(context, noAir ? StateFirstSample : StateFirstAir);
 
                     if(options.filename_data == NULL)
                     {
                         if(eviGet(self, INDEX_SERIALNUMBER, sn, sizeof(sn)) == ERROR_EVI_OK)
                         {
                             char * ts   = malloc_timeStamp(TimeStampTypeFile);
-                            char * file = malloc_printf("evidense-SN%s-%s.json", sn, ts);
+                            char * file = malloc_printf("evifluor-SN%s-%s.json", sn, ts);
                             contextSetDataFile(context, file);
                             free(ts);
                             free(file);
@@ -617,7 +851,7 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
                         else
                         {
                             char * ts   = malloc_timeStamp(TimeStampTypeFile);
-                            char * file = malloc_printf("evidense-SN%s-%s.json", "0", ts);
+                            char * file = malloc_printf("evifluor-SN%s-%s.json", "0", ts);
                             contextSetDataFile(context, file);
                             free(ts);
                             free(file);
@@ -627,32 +861,17 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
                     {
                         contextSetDataFile(context, options.filename_data);
                     }
-
-                    ret = dataInitializeFile(self, contextGetDataFile(context));
-                    contextAddLog(context, "Initialize data file ret:%i", ret);
-
-                    if((ret == ERROR_EVI_OK) && (noPurityRatio260280Correction == false))
-                    {
-                        ret = dataWriteCenterWavelength280(self, contextGetDataFile(context));
-                        contextAddLog(context, "Read center wavelength 280 ret:%i", ret);
-                    }
-                    else
-                    {
-                        contextAddLog(context, "Skipped center wavelength 280 correction");
-                    }
-
                     contextAddLog(context, "Created");
                     loggingClear(self);
-                    if(ret == ERROR_EVI_OK)
+                    fprintf_s(stdout, "Run initialized with %i stdandard high (%.1f ng/ul) and %i stdandard low.\n", contextGetNrOfStdHigh(context), contextGetConcentrationStdHigh(context), contextGetNrOfStdLow(context));
+                    fprintf_s(stdout, "Kit: %s.\n", contextGetKit(context).description);
+                    fprintf_s(stdout, "Settling time: %.2f s.\n", contextGetSettlingTime(context));
+                    if(noAir)
                     {
-                        fprintf_s(stdout, "Run initialized with %i blanks.\n", contextGetNrOfBlanks(context));
-                        fprintf_s(stdout, "State stored in %s.\n", options.filename_state);
-                        fprintf_s(stdout, "Data stored in %s.\n", contextGetDataFile(context));
+                        fprintf_s(stdout, "Air measurements are disabled for this run.\n");
                     }
-                    else
-                    {
-                        printError(ret, NULL);
-                    }
+                    fprintf_s(stdout, "State stored in %s.\n", options.filename_state);
+                    fprintf_s(stdout, "Data stored in %s.\n", contextGetDataFile(context));
                 }
                 else
                 {
@@ -671,7 +890,7 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
             else if(strcmp(argvCmdSave[0], "checkempty") == 0)
             {
                 bool empty = 0;
-                ret = eviDenseIsCuvetteHolderEmpty(self, &empty);
+                ret = eviFluorIsCuvetteHolderEmpty(self, &empty);
                 contextAddLog(context, "check empty ret:%i empty:%i", ret, empty);
                 if(ret == ERROR_EVI_OK)
                 {
@@ -702,6 +921,7 @@ Error_t cmdRun(Evi_t* self, int argcCmd, char** argvCmd)
         }
 
         contextSave(context, options.filename_state);
+cleanup_context:
         cJSON_Delete(context);
     }
 

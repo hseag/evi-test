@@ -1,7 +1,0 @@
-hse.evidense.singlemeasurement module
-=====================================
-
-.. automodule:: hse.evidense.singlemeasurement
-   :members:
-   :show-inheritance:
-   :undoc-members:

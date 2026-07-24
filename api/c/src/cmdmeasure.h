@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evibase.h"
+#include "evifluor.h"
 
 /**
- * @brief Executes the `measure` command to run a fluorescence measurement.
+ * @brief Handles the `measure` CLI command and stores the result.
  *
- * @param self Pointer to the device instance acquiring the measurement.
- * @return Error code describing success or failure of the measurement routine.
+ * @param self Runtime context with active device connection.
+ * @param argcCmd Number of command specific arguments.
+ * @param argvCmd Vector of command specific arguments.
+ * @return Error code describing the result.
  */
-Error_t cmdMeasure(Evi_t * self);
-
+Error_t cmdMeasure(Evi_t * self, int argcCmd, char **argvCmd);

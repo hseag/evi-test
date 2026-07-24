@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evibase.h"
+#include "common/evibase.h"
 
 /**
- * @brief Executes the `empty` command to check whether the cuvette holder is empty.
+ * @brief Handles the `empty` CLI command that validates an empty cuvette holder.
  *
- * @param self Pointer to the device context queried by the command.
- * @return Error code signalling success or the type of failure encountered.
+ * @param self Runtime context controlling device communication.
+ * @return Error code reported by the device layer.
  */
 Error_t cmdEmpty(Evi_t * self);
-

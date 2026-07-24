@@ -2,8 +2,8 @@
 set(CJSON_UTILS_FOUND OFF)
 
 # The include directories used by cJSON
-set(CJSON_INCLUDE_DIRS "/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include")
-set(CJSON_INCLUDE_DIR "/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include")
+set(CJSON_INCLUDE_DIRS "/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include")
+set(CJSON_INCLUDE_DIR "/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include")
 
 get_filename_component(_dir "${CMAKE_CURRENT_LIST_FILE}" PATH)
 

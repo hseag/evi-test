@@ -9,4 +9,4 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   hse.evidense
+   hse.evifluor

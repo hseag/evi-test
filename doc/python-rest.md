@@ -7,53 +7,55 @@ It complements the high-level API, the low-level API, and the Python command lin
 
 ## 2. Overview
 
-The REST API provides HTTP access to the Python software stack of the eviDense UV Photometer.
-It is intended for machine-to-machine integration and exposes a command model aligned with the Python CLI.
+The REST API provides HTTP access to the Python software stack of the eviFluor Duo Fluorometer.
+It is intended for machine-to-machine integration and exposes a command model aligned with the Python CLI run workflow.
 
-The server implementation is documented in [`hse.evidense.rest_server`][rest-server-api], and the example client in [`hse.evidense.rest_client`][rest-client-api].
+The server implementation is documented in [`hse.evifluor.rest_server`][rest-server-api], and the example client in [`hse.evifluor.rest_client`][rest-client-api].
 
 The current REST API covers:
 
+- device discovery
 - device information
 - self-test
 - empty-check of the cuvette guide
 - run initialization
 - step-wise run measurement
-- kit import into an active run
 - CSV export of a run
-- kit creation
 - retrieval of generated JSON run data
+- download of generated JSON and CSV files
+
+Run initialization supports the same kit selection and settling-time override as the Python CLI. For supported kit names and serialized kit fields, see [Kit Reference](./kit.md), especially section 2.
 
 ## 3. Installation and Startup
 
 To install the published wheel directly from the documentation site, use:
 
 ```bash
-python -m pip install "hse-evidense[rest] @ https://hseag.github.io/evi-test/pre-release/api/python/dist/hse_evidense-0.10.0-py3-none-any.whl"
+python -m pip install "hse-evifluor[rest] @ https://hseag.github.io/evifluor/pre-release/python/dist/hse_evifluor-0.0.1.post1.dev15+gdd237499c-py3-none-any.whl"
 ```
 
 Start the REST API with:
 
 ```bash
-evidense-rest --host 127.0.0.1 --port 8000
+evifluor-rest --host 127.0.0.1 --port 8000
 ```
 
 or
 
 ```bash
-python -m hse.evidense.rest_server --host 127.0.0.1 --port 8000
+python -m hse.evifluor.rest_server --host 127.0.0.1 --port 8000
 ```
 
-To set a server-wide working directory for all generated run, CSV, and kit files, use:
+To set a server-wide working directory for all generated run and CSV files, use:
 
 ```bash
-python -m hse.evidense.rest_server --host 127.0.0.1 --port 8000 --working-dir C:/data/evidense-rest
+python -m hse.evifluor.rest_server --host 127.0.0.1 --port 8000 --working-dir C:/data/evifluor-rest
 ```
 
 To enable debug mode and write diagnostics to stderr instead of the rotating log file, use:
 
 ```bash
-python -m hse.evidense.rest_server --host 127.0.0.1 --port 8000 --debug
+python -m hse.evifluor.rest_server --host 127.0.0.1 --port 8000 --debug
 ```
 
 After startup, the interactive API documentation is available at:
@@ -89,11 +91,11 @@ Examples:
 
 All requests and responses use JSON unless a file download endpoint is used.
 
-The REST server manages run and kit file locations on the server side. By default, generated files are stored in the `evidense-rest-data` directory, or in the directory passed with `--working-dir`.
+The REST server manages run file locations on the server side. By default, generated files are stored in the `evifluor-rest-data` directory, or in the directory passed with `--working-dir`.
 
 The REST server also configures backend logging:
 
-- without `--debug`, backend logs are written to `evidense-rest.log` in the selected working directory
+- without `--debug`, backend logs are written to `evifluor-rest.log` in the selected working directory
 - the log file uses rotation with backups
 - with `--debug`, backend logs are written to stderr instead of the log file
 
@@ -150,7 +152,7 @@ Response:
 {
   "devices": [
     {
-      "device_id": "SN0045",
+      "device_id": "P10006",
       "port": "COM14"
     }
   ]
@@ -178,8 +180,9 @@ Response:
 
 ```json
 {
-  "serialnumber": "SN0045",
-  "firmwareVersion": "1.2.3"
+  "serialnumber": "P10006",
+  "firmwareVersion": "1.2.3",
+  "productionnumber": "2025-0001"
 }
 ```
 
@@ -199,12 +202,7 @@ Request:
 
 Response:
 
-```json
-{
-  "serialnumber": "SN0045",
-  "firmwareVersion": "1.2.3"
-}
-```
+- same structure as `GET /api/v1/device/info`
 
 ### 5.6 `POST /api/v1/device/selftest`
 
@@ -222,16 +220,7 @@ Response:
 ```json
 {
   "result": 0,
-  "hasProblems": false,
-  "splitRatio230nm": 1234,
-  "amplifierCurrent": 50000,
-  "230": {
-    "iled": 5000,
-    "darkSample": 10,
-    "darkReference": 10,
-    "sample": 12345,
-    "reference": 12345
-  }
+  "hasProblems": false
 }
 ```
 
@@ -304,7 +293,7 @@ Response:
 
 Purpose:
 
-- returns the current REST-service-side device status in single-device mode
+- returns the current service-side device status in single-device mode
 
 Request:
 
@@ -314,7 +303,7 @@ Response:
 
 ```json
 {
-  "device_id": "SN0045",
+  "device_id": "P10006",
   "status": "idle",
   "error": null
 }
@@ -322,9 +311,9 @@ Response:
 
 Response fields:
 
-- `device_id`: resolved device identifier
-- `status`: current service-side status with the values `idle`, `busy`, or `error`
-- `error`: `null` during normal operation, otherwise a short status-resolution error description
+- `device_id`: resolved device identifier if known
+- `status`: current service-side status, one of `idle`, `busy`, or `error`
+- `error`: optional backend-side status message, otherwise `null`
 
 Status meaning:
 
@@ -344,7 +333,7 @@ If the device appears again in a later discovery pass, the endpoint returns `idl
 
 Purpose:
 
-- returns the current REST-service-side device status for the explicitly selected device
+- returns the current service-side device status for the explicitly selected device
 
 Path parameters:
 
@@ -358,6 +347,12 @@ Response:
 
 - same structure as `GET /api/v1/device/status`
 
+Behavior:
+
+- `idle`: the selected device is currently available to the REST service
+- `busy`: the device is currently used by another REST request, for example during a self-test or active measurement step
+- `error`: no matching device is available or no device could be resolved
+
 ### 5.12 `POST /api/v1/runs`
 
 Purpose:
@@ -368,33 +363,67 @@ Request:
 
 ```json
 {
-  "device_id": "SN0045",
-  "nr_of_blanks": 2,
-  "no_purity_ratio_260_280_correction": false
+  "device_id": "P10006",
+  "nr_of_std_low": 2,
+  "nr_of_std_high": 2,
+  "concentration": 10.0,
+  "kit": "Default",
+  "settling_time": null,
+  "no_air": false
 }
 ```
 
 Request fields:
 
 - `device_id`: optional in single-device mode, required for explicit multi-device selection
-- `nr_of_blanks`: number of blank measurements
-- `no_purity_ratio_260_280_correction`: optional boolean flag
+- `nr_of_std_low`: number of `standard low` measurements at the beginning of the run
+- `nr_of_std_high`: number of `standard high` measurements at the beginning of the run
+- `concentration`: concentration assigned to the `standard high`
+- `kit`: optional predefined kit name, default `Default`; see [Kit Reference](./kit.md), section 2
+- `settling_time`: optional settling-time override in seconds; `null` means use the kit default
+- `no_air`: optional boolean flag that omits separate air measurements
 
 Response:
 
 ```json
 {
-  "run_id": "ZXZpZGVuc2UtU04wMDQ1LXN0YXRlLmpzb24",
-  "device": "SN0045",
-  "nr_of_blanks": 2,
+  "run_id": "ZXZpZmx1b3ItUDEwMDA2LXN0YXRlLmpzb24",
+  "device": "P10006",
+  "nr_of_std_low": 2,
+  "nr_of_std_high": 2,
+  "concentration": 10.0,
+  "kit": {
+    "fitAlgorithm": 1,
+    "k1": 1.0,
+    "k2": 0.0,
+    "k3": 0.0,
+    "settlingTime": 5.0,
+    "stdHighTargetSignalFactor": null,
+    "description": "Default kit with linear fit"
+  },
+  "settling_time": 5.0,
+  "no_air": false,
   "count": 0,
-  "next_state": "baseline",
+  "next_state": "first_air",
   "measurement_count": 0,
   "has_factors": false,
   "state": {
-    "nr_of_blanks": 2,
+    "nr_of_std_low": 2,
+    "nr_of_std_high": 2,
+    "concentration": 10.0,
+    "kit": {
+      "fitAlgorithm": 1,
+      "k1": 1.0,
+      "k2": 0.0,
+      "k3": 0.0,
+      "settlingTime": 5.0,
+      "stdHighTargetSignalFactor": null,
+      "description": "Default kit with linear fit"
+    },
+    "settling_time": 5.0,
     "count": 0,
-    "state": 0
+    "state": 0,
+    "no_air": false
   }
 }
 ```
@@ -403,12 +432,23 @@ Response fields:
 
 - `run_id`: opaque run identifier used in all run endpoints
 - `device`: selected device
-- `nr_of_blanks`: configured number of blanks
+- `nr_of_std_low`: configured number of `standard low` measurements
+- `nr_of_std_high`: configured number of `standard high` measurements
+- `concentration`: configured concentration of the `standard high`
+- `kit`: serialized active kit configuration as documented in [Kit Reference](./kit.md), section 7
+- `settling_time`: active settling time used by the run
+- `no_air`: whether the run omits separate air measurements
 - `count`: number of completed `run measure` steps
 - `next_state`: next expected state in the run state machine
 - `measurement_count`: number of completed stored measurements
-- `has_factors`: whether blank-derived or imported factors are available
+- `has_factors`: whether standard-derived factors are available
+- `verification`: verification result of the most recently executed measurement step; see [Verification Reference](./verification.md)
 - `state`: current serialized run state without internal server-side file paths
+
+Behavior:
+
+- the measurement order must be `standard high`, `standard low`, then the samples
+- `standard high` must come first because the initial automatic gain adjustment is based on this measurement sequence
 
 ### 5.13 `GET /api/v1/runs/{run_id}`
 
@@ -454,66 +494,20 @@ Request fields:
 Response:
 
 - same general structure as `GET /api/v1/runs/{run_id}`
+- includes `verification` for the measurement step that was just executed; see [Verification Reference](./verification.md)
 
-Behavior:
+Behavior in normal mode:
 
-- first call performs the baseline step
-- second call performs the air step
-- third call performs the sample step and appends a completed measurement
+- first call performs the first-air step
+- second call performs the first-sample step and appends the first completed measurement
+- subsequent calls alternate between air and sample measurements
 
-### 5.15 `POST /api/v1/runs/{run_id}/kit/import`
+Behavior with `no_air=true`:
 
-Purpose:
+- the first call performs the first-sample step and appends the first completed measurement
+- subsequent calls perform sample-only measurements and append one measurement per call
 
-- imports a kit into the active run
-
-Path parameters:
-
-- `run_id`: run identifier
-
-Request:
-
-```json
-{
-  "kit": {
-    "comment": "Batch A",
-    "factors": {
-      "buffer_blank": {
-        "230": 1.0,
-        "260": 1.0,
-        "280": 1.0,
-        "340": 1.0
-      }
-    }
-  }
-}
-```
-
-Request fields:
-
-- `kit`: full kit JSON content
-
-Response:
-
-```json
-{
-  "run_id": "ZXZpZGVuc2UtU04wMDQ1LXN0YXRlLmpzb24",
-  "kit": {
-    "comment": "Batch A",
-    "factors": {
-      "buffer_blank": {
-        "230": 1.0,
-        "260": 1.0,
-        "280": 1.0,
-        "340": 1.0
-      }
-    }
-  },
-  "has_factors": true
-}
-```
-
-### 5.16 `POST /api/v1/runs/{run_id}/export/csv`
+### 5.15 `POST /api/v1/runs/{run_id}/export/csv`
 
 Purpose:
 
@@ -537,7 +531,7 @@ Behavior:
 - the server writes or updates the CSV file on disk
 - the same request returns the generated CSV content to the client
 
-### 5.17 `GET /api/v1/runs/{run_id}/data`
+### 5.16 `GET /api/v1/runs/{run_id}/data`
 
 Purpose:
 
@@ -556,7 +550,7 @@ Response:
 - the full JSON measurement data file
 - structure as documented in the user manual JSON data file format section
 
-### 5.18 `GET /api/v1/runs/{run_id}/file/json`
+### 5.17 `GET /api/v1/runs/{run_id}/file/json`
 
 Purpose:
 
@@ -574,7 +568,7 @@ Return:
 
 - file download with media type `application/json`
 
-### 5.19 `GET /api/v1/runs/{run_id}/file/csv`
+### 5.18 `GET /api/v1/runs/{run_id}/file/csv`
 
 Purpose:
 
@@ -592,59 +586,6 @@ Return:
 
 - file download with media type `text/csv`
 
-### 5.20 `POST /api/v1/kits`
-
-Purpose:
-
-- creates a kit from a JSON data file payload
-
-Request:
-
-```json
-{
-  "data": {
-    "parameters_run": {
-      "nr_of_blanks": 2,
-      "factors": {
-        "buffer_blank": {
-          "230": 1.0,
-          "260": 1.0,
-          "280": 1.0,
-          "340": 1.0
-        }
-      }
-    }
-  },
-  "comment": "Batch A"
-}
-```
-
-Request fields:
-
-- `data`: full JSON data file content
-- `comment`: optional kit comment
-
-Response:
-
-```json
-{
-  "comment": "Batch A",
-  "factors": {
-    "buffer_blank": {
-      "230": 1.0,
-      "260": 1.0,
-      "280": 1.0,
-      "340": 1.0
-    }
-  }
-}
-```
-
-Behavior:
-
-- the server derives the kit from the supplied JSON data file content
-- the generated kit JSON is returned directly in the response
-
 ## 6. Relationship to the Python CLI
 
 The REST API is aligned with the Python CLI and mirrors the same main workflow concepts:
@@ -654,9 +595,7 @@ The REST API is aligned with the Python CLI and mirrors the same main workflow c
 - `checkempty`
 - `run init`
 - `run measure`
-- `run addkit`
 - `run export`
-- `kit create`
 
 The difference is only the transport:
 
@@ -668,30 +607,76 @@ The difference is only the transport:
 The following example demonstrates the same workflow as the high-level Python example, but through the REST API:
 
 ```python
-from hse.evidense.rest_client import RestClient
+from hse.evifluor.rest_client import RestClient
 
 
 def main():
     client = RestClient()
 
     run = client.run_init(
-        nr_of_blanks=2,
+        nr_of_std_low=1,
+        nr_of_std_high=1,
+        concentration=10.0,
+        kit="qubit_br",
+        settling_time=0.0,
     )
     run_id = run["run_id"]
 
-    samples = ["blank 1", "blank 2", "sample 1", "sample 2"]
+    sample_order = [
+        "std high 1",
+        "std low 1",
+        "sample 1",
+        "sample 2",
+    ]
 
-    for sample in samples:
-        # The liquid handler aspirates at least 10 uL from the current blank or sample well.
+    for sample_name in sample_order:
         # The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
         if not client.checkempty()["empty"]:
-            raise RuntimeError("Cuvette holder must be empty before the air measurement")
-        # Start the baseline measurement.
-        client.run_measure(run_id)
-        # Move the cuvette into the cuvette guide and start the air measurement.
+            raise RuntimeError("Cuvette holder must be empty before the measurement")
+        # Move the empty cuvette into the cuvette guide and start the air measurement.
         client.run_measure(run_id)
         # Dispense the liquid into the cuvette and start the sample measurement.
-        client.run_measure(run_id, comment=sample)
+        client.run_measure(run_id, sample_name)
+        # Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
+
+    csv_text = client.run_export_csv(run_id)
+    print(csv_text)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+If the run should omit air measurements, enable `no_air` during `run_init()`:
+
+```python
+from hse.evifluor.rest_client import RestClient
+
+
+def main():
+    client = RestClient()
+
+    run = client.run_init(
+        nr_of_std_low=1,
+        nr_of_std_high=1,
+        concentration=10.0,
+        no_air=True,
+    )
+    run_id = run["run_id"]
+
+    sample_order = [
+        "std high 1",
+        "std low 1",
+        "sample 1",
+        "sample 2",
+    ]
+
+    for sample_name in sample_order:
+        # The liquid handler picks up a cuvette with the tip and moves above the cuvette guide.
+        if not client.checkempty()["empty"]:
+            raise RuntimeError("Cuvette holder must be empty before the measurement")
+        # Dispense the liquid into the cuvette and start the sample measurement.
+        client.run_measure(run_id, sample_name)
         # Aspirate the liquid back into the tip, leave the cuvette guide, and discard tip plus cuvette.
 
     csv_text = client.run_export_csv(run_id)
@@ -704,7 +689,7 @@ if __name__ == "__main__":
 
 This example uses the Python REST client in:
 
-- [api/python/src/hse/evidense/rest_client.py](../api/python/src/hse/evidense/rest_client.py)
+- [module/python/hse/evifluor/rest_client.py](../api/python/src/hse/evifluor/rest_client.py)
 
 ## 8. Error Handling
 
@@ -716,6 +701,7 @@ Typical categories are:
 - missing device
 - multiple devices when a single-device route is used
 - invalid run identifier
+- missing run data file
 - backend execution errors from the device or run logic
 
 ## 9. Notes
@@ -726,5 +712,5 @@ Typical categories are:
 - The `--working-dir` option controls both generated data files and the default log file location.
 - The `--debug` option enables stderr logging for easier interactive troubleshooting.
 
-[rest-server-api]: https://hseag.github.io/evi-test/pre-release/doc/api/python/hse.evidense.rest_server.html
-[rest-client-api]: https://hseag.github.io/evi-test/pre-release/doc/api/python/hse.evidense.rest_client.html
+[rest-server-api]: https://hseag.github.io/evifluor/pre-release/doc/api/python/hse.evifluor.rest_server.html
+[rest-client-api]: https://hseag.github.io/evifluor/pre-release/doc/api/python/hse.evifluor.rest_client.html

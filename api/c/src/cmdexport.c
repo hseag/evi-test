@@ -4,6 +4,7 @@
 #include "cmdexport.h"
 #include "json.h"
 #include "dict.h"
+#include "evifluor.h"
 #include "printerror.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,38 +12,53 @@
 #include <sys/stat.h>
 #include <time.h>
 
-void exportRawMeasurement(ExportOptions_t * options, cJSON *object, FILE * csv, const char * const key, bool last)
+void exportCalculated(ExportOptions_t * options, cJSON *object, FILE * csv, bool last)
 {
-    cJSON * measurement = cJSON_GetObjectItem(object, key);
-    if(measurement)
+    cJSON * oConcentration = cJSON_GetObjectItem(object, DICT_CONCENTRATION);
+    cJSON * oRfu = cJSON_GetObjectItem(object, DICT_RFU);
+    if(oConcentration)
     {
-        cJSON * sample = NULL;
-        cJSON * reference = NULL;
-        cJSON *o = cJSON_GetObjectItem(object, key);
-        if(o)
-        {
-            sample    = cJSON_GetObjectItem(o, DICT_SAMPLE);
-            reference = cJSON_GetObjectItem(o, DICT_REFERENCE);
-        }
+        fprintf_s(csv, "%f", cJSON_GetNumberValue(oConcentration));
+    }
 
-        fprintf_s(csv, "%i%c", sample ? (int)cJSON_GetNumberValue(sample) : 0, options->delimiter);
-        fprintf_s(csv, "%i", reference ? (int)cJSON_GetNumberValue(reference) : 0);
+    fprintf_s(csv, "%c", options->delimiter);
 
+    if(oRfu)
+    {
+        fprintf_s(csv, "%f", cJSON_GetNumberValue(oRfu));
+    }
+
+    if(!last)
+    {
+        fprintf_s(csv, "%c", options->delimiter);
+    }
+}
+
+void exportRawMeasurement(ExportOptions_t * options, cJSON *object, FILE * csv, bool last)
+{
+    if(object)
+    {
+        cJSON * dark     = cJSON_GetObjectItem(object, DICT_DARK);
+        cJSON * value    = cJSON_GetObjectItem(object, DICT_VALUE);
+        cJSON * ledPower = cJSON_GetObjectItem(object, DICT_LED_POWER);
+
+        fprintf_s(csv, "%f%c", dark ? cJSON_GetNumberValue(dark) : 0, options->delimiter);
+        fprintf_s(csv, "%f%c", value ? cJSON_GetNumberValue(value) : 0, options->delimiter);
+        fprintf_s(csv, "%d", value ? (int)cJSON_GetNumberValue(ledPower) : 0);
         if(!last)
         {
             fprintf_s(csv, "%c", options->delimiter);
         }
     }
-}
-
-void exportRawMeasurements(ExportOptions_t * options, cJSON *object, FILE * csv, const char * const key)
-{
-    cJSON * measurements = cJSON_GetObjectItem(object, key);
-
-    exportRawMeasurement(options, measurements, csv, DICT_230, false);
-    exportRawMeasurement(options, measurements, csv, DICT_260, false);
-    exportRawMeasurement(options, measurements, csv, DICT_280, false);
-    exportRawMeasurement(options, measurements, csv, DICT_340, true);
+    else
+    {
+        fprintf_s(csv, "%c%c", options->delimiter, options->delimiter);
+        fprintf_s(csv, "%s", last ? "" : "");
+        if(!last)
+        {
+            fprintf_s(csv, "%c", options->delimiter);
+        }
+    }
 }
 
 void exportRaw(ExportOptions_t * options, cJSON *object, FILE * csv)
@@ -62,136 +78,54 @@ void exportRaw(ExportOptions_t * options, cJSON *object, FILE * csv)
             fprintf_s(csv, "%s%c", oComment ? cJSON_GetStringValue(oComment) : "", options->delimiter);
         }
 
-        exportRawMeasurement(options, iterator, csv, DICT_230, false);
-        exportRawMeasurement(options, iterator, csv, DICT_260, false);
-        exportRawMeasurement(options, iterator, csv, DICT_280, false);
-        exportRawMeasurement(options, iterator, csv, DICT_340, true);
-
+        exportRawMeasurement(options, iterator, csv, true);
         fprintf_s(csv, "\n");
         first = false;
     }
 }
 
-void exportMeasurement(ExportOptions_t * options, cJSON *iterator, FILE * csv)
+void exportMeasurement(ExportOptions_t * options, cJSON *object, FILE * csv)
 {
-    cJSON *oComment = cJSON_GetObjectItem(iterator, DICT_COMMENT);
-    cJSON * oCalculated = cJSON_GetObjectItem(iterator, DICT_RESULTS);
-    cJSON *oMeasurement = NULL;
-    cJSON *oLed = NULL;
-    cJSON *oReference = NULL;
-    cJSON *oSample = NULL;
-    cJSON *oValue = NULL;
+    cJSON *oComment = cJSON_GetObjectItem(object, DICT_COMMENT);
 
-    fprintf_s(csv, "%s%c", oComment ? cJSON_GetStringValue(oComment) : "", options->delimiter);
+    cJSON *oAir = cJSON_GetObjectItem(object, DICT_AIR);
+    cJSON *oSample = cJSON_GetObjectItem(object, DICT_SAMPLE);
+    cJSON *oCalculated = cJSON_GetObjectItem(object, DICT_CALCULATED);
 
-    #define EXPORT_CHANNEL(KEY1, KEY2, LAST) \
-        oMeasurement = cJSON_GetObjectItem(iterator, KEY1); \
-        oLed = oMeasurement ? cJSON_GetObjectItem(oMeasurement, KEY2) : NULL; \
-        oReference = oLed ? cJSON_GetObjectItem(oLed, DICT_REFERENCE) : NULL; \
-        oSample = oLed ? cJSON_GetObjectItem(oLed, DICT_SAMPLE) : NULL; \
-        if(oReference) fprintf_s(csv, "%i", (int)cJSON_GetNumberValue(oReference)); \
-        fprintf_s(csv, "%c", options->delimiter); \
-        if(oSample) fprintf_s(csv, "%i", (int)cJSON_GetNumberValue(oSample)); \
-        if(!(LAST)) fprintf_s(csv, "%c", options->delimiter);
-
-    #define EXPORT_RESULT(KEY, LAST) \
-        oValue = oCalculated ? cJSON_GetObjectItem(oCalculated, KEY) : NULL; \
-        if(oValue) fprintf_s(csv, "%f", cJSON_GetNumberValue(oValue)); \
-        if(!(LAST)) fprintf_s(csv, "%c", options->delimiter);
-
-    EXPORT_CHANNEL(DICT_BASELINE, DICT_230, false);
-    EXPORT_CHANNEL(DICT_BASELINE, DICT_260, false);
-    EXPORT_CHANNEL(DICT_BASELINE, DICT_280, false);
-    EXPORT_CHANNEL(DICT_BASELINE, DICT_340, false);
-    EXPORT_CHANNEL(DICT_AIR, DICT_230, false);
-    EXPORT_CHANNEL(DICT_AIR, DICT_260, false);
-    EXPORT_CHANNEL(DICT_AIR, DICT_280, false);
-    EXPORT_CHANNEL(DICT_AIR, DICT_340, false);
-    EXPORT_CHANNEL(DICT_SAMPLE, DICT_230, false);
-    EXPORT_CHANNEL(DICT_SAMPLE, DICT_260, false);
-    EXPORT_CHANNEL(DICT_SAMPLE, DICT_280, false);
-    EXPORT_CHANNEL(DICT_SAMPLE, DICT_340, false);
-
-    EXPORT_RESULT(DICT_DS_DNA, false);
-    EXPORT_RESULT(DICT_SS_DNA, false);
-    EXPORT_RESULT(DICT_SS_RNA, false);
-    EXPORT_RESULT(DICT_A230, false);
-    EXPORT_RESULT(DICT_A260, false);
-    EXPORT_RESULT(DICT_A280, false);
-    EXPORT_RESULT(DICT_A340, false);
-    EXPORT_RESULT(DICT_PURITY_260_230, false);
-    EXPORT_RESULT(DICT_PURITY_260_280, true);
-
-    #undef EXPORT_CHANNEL
-    #undef EXPORT_RESULT
-
-    fprintf_s(csv, "\n");
-}
-
-void exportMeasurementSingleLedHeader(ExportOptions_t * options, FILE * csv, const char * const key1, const char * const key2, bool last)
-{
-    if(key1 == NULL)
+    if(oSample != NULL)
     {
-        fprintf_s(csv, "%s %s%c", key2, DICT_SAMPLE, options->delimiter);
-        fprintf_s(csv, "%s %s", key2, DICT_REFERENCE);
-    }
-    else
-    {
-        fprintf_s(csv, "%s %s %s%c", key1, key2, DICT_SAMPLE, options->delimiter);
-        fprintf_s(csv, "%s %s %s", key1, key2, DICT_REFERENCE);
-    }
-
-    if(!last)
-    {
-        fprintf_s(csv, "%c", options->delimiter);
+        fprintf_s(csv, "%s%c", oComment ? cJSON_GetStringValue(oComment) : "", options->delimiter);
+        exportRawMeasurement(options, oAir, csv, false);
+        exportRawMeasurement(options, oSample, csv, false);
+        exportCalculated(options, oCalculated, csv, true);
+        fprintf_s(csv, "\n");
     }
 }
 
 void exportRawHeader(ExportOptions_t * options, FILE * csv)
 {
     fprintf_s(csv, "%s%c", DICT_COMMENT, options->delimiter);
-    exportMeasurementSingleLedHeader(options, csv, NULL, DICT_230, false);
-    exportMeasurementSingleLedHeader(options, csv, NULL, DICT_260, false);
-    exportMeasurementSingleLedHeader(options, csv, NULL, DICT_280, false);
-    exportMeasurementSingleLedHeader(options, csv, NULL, DICT_340, true);
-
+    fprintf_s(csv, "%s%c", DICT_DARK, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_VALUE, options->delimiter);
+    fprintf_s(csv, "%s", DICT_LED_POWER);
     fprintf_s(csv, "\n");
-}
-
-void exportMeasurementSingleHeader(ExportOptions_t * options, FILE * csv, const char * const key)
-{
-    fprintf_s(csv, "%s %s %s%c", key, DICT_230, DICT_REFERENCE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_230, DICT_SAMPLE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_260, DICT_REFERENCE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_260, DICT_SAMPLE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_280, DICT_REFERENCE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_280, DICT_SAMPLE, options->delimiter);
-    fprintf_s(csv, "%s %s %s%c", key, DICT_340, DICT_REFERENCE, options->delimiter);
-    fprintf_s(csv, "%s %s %s", key, DICT_340, DICT_SAMPLE);
 }
 
 void exportMeasurementHeader(ExportOptions_t * options, FILE * csv)
 {
     fprintf_s(csv, "%s%c", DICT_COMMENT, options->delimiter);
-    exportMeasurementSingleHeader(options, csv, DICT_BASELINE);
-    fprintf_s(csv, "%c", options->delimiter);
-    exportMeasurementSingleHeader(options, csv, DICT_AIR);
-    fprintf_s(csv, "%c", options->delimiter);
-    exportMeasurementSingleHeader(options, csv, DICT_SAMPLE);
-    fprintf_s(csv, "%c%s%c%s%c%s%c%s%c%s%c%s%c%s%c%s%c%s", options->delimiter,
-        DICT_DS_DNA, options->delimiter,
-        DICT_SS_DNA, options->delimiter,
-        DICT_SS_RNA, options->delimiter,
-        DICT_A230, options->delimiter,
-        DICT_A260, options->delimiter,
-        DICT_A280, options->delimiter,
-        DICT_A340, options->delimiter,
-        DICT_PURITY_260_230, options->delimiter,
-        DICT_PURITY_260_280);
+    fprintf_s(csv, "%s%c", DICT_AIR_DARK, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_AIR_VALUE, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_AIR_LED_POWER, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_SAMPLE_DARK, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_SAMPLE_VALUE, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_SAMPLE_LED_POWER, options->delimiter);
+    fprintf_s(csv, "%s%c", DICT_CONCENTRATION, options->delimiter);
+    fprintf_s(csv, "%s",   DICT_RFU);
     fprintf_s(csv, "\n");
 }
 
-Error_t exportData(ExportOptions_t *options)
+Error_t exportData(ExportOptions_t * options)
 {
     Error_t ret  = ERROR_EVI_OK;
     cJSON* json = json_loadFromFile(options->filenameJson);
@@ -240,6 +174,7 @@ Error_t exportData(ExportOptions_t *options)
     }
     return ret;
 }
+
 
 Error_t cmdExport(Evi_t* self, int argcCmd, char** argvCmd)
 {
@@ -306,6 +241,9 @@ Error_t cmdExport(Evi_t* self, int argcCmd, char** argvCmd)
     }
 
     ret = exportData(&options);
+
+
+
 exit:
 
     free(options.filenameJson);

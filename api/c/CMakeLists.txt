@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(evidense-commandline LANGUAGES C)
+project(evifluor-commandline LANGUAGES C)
 
 set(TOP ${PROJECT_SOURCE_DIR})
 
@@ -66,59 +66,66 @@ set(CMAKE_VERBOSE_MAKEFILE ON CACHE BOOL "ON")
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
-add_library(evidense SHARED)
+add_library(evifluor SHARED)
 
-target_include_directories(evidense PRIVATE ${SRC})
+target_include_directories(evifluor PRIVATE ${SRC})
 
-target_sources(evidense PRIVATE
+target_sources(evifluor PRIVATE
+  ${COMMON}/evibase.h
   ${COMMON}/evibase.c
   ${COMMON}/crc-16-ccitt.c
   ${COMMON}/helpers.c
+  ${SRC}/evifluor.c
   ${SRC}/channel.c
+  ${SRC}/channel.h
   ${SRC}/singlemeasurement.c
-  ${SRC}/quadruple.c
+  ${SRC}/singlemeasurement.h
   ${SRC}/measurement.c
-  ${SRC}/evidense.c
+  ${SRC}/measurement.h
+  ${SRC}/verification.c
+  ${SRC}/verification.h
+  ${SRC}/kit.c
+  ${SRC}/kit.h
 )
 
 # Stuff only for WIN32
 if (WIN32)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-    target_sources(evidense PRIVATE src/common/evi_win.c)
-    target_link_libraries(evidense setupapi ws2_32)
+    target_sources(evifluor PRIVATE src/common/evi_win.c)
+    target_link_libraries(evifluor setupapi ws2_32)
 endif()
 
 if (UNIX)
     set (CMAKE_C_FLAGS "-Wall ${EXTRA_C_FLAGS}")
-    target_sources(evidense PRIVATE src/common/evi_unix.c)
-    target_link_libraries(evidense m)
+    target_sources(evifluor PRIVATE src/common/evi_unix.c)
+    target_link_libraries(evifluor m)
     find_path(LIBUSB_INCLUDE_DIR NAMES libusb.h PATH_SUFFIXES "include" "libusb" "libusb-1.0")
     find_library(LIBUSB_LIBRARY NAMES usb PATH_SUFFIXES "lib" "lib32" "lib64")    
-    target_link_libraries(evidense usb-1.0)
+    target_link_libraries(evifluor usb-1.0)
 endif()
 
-set_target_properties(evidense PROPERTIES PUBLIC_HEADER "${SRC}/channel.h;${SRC}/singlemeasurement.h;${SRC}/quadruple.h;${SRC}/measurement.h;${SRC}/evidense.h;${SRC}/evidenseindex.h;${SRC}/eviconfig.h;${COMMON}/commonerror.h;${COMMON}/commonindex.h;${COMMON}/evibase.h")
+set_target_properties(evifluor PROPERTIES PUBLIC_HEADER "${SRC}/measurement.h;${SRC}/singlemeasurement.h;${SRC}/channel.h;${SRC}/evifluor.h;${SRC}/evifluorerror.h;${SRC}/evifluorindex.h;${COMMON}/commonerror.h;${COMMON}/commonindex.h;${COMMON}/evibase.h")
 
-add_executable(evidense-cli)
-target_sources(evidense-cli PRIVATE
-  ${SRC}/main.c
-  ${SRC}/cmdbaseline.c
-  ${SRC}/cmddata.c
-  ${SRC}/cmdempty.c
-  ${SRC}/cmdexport.c
-  ${SRC}/cmdmeasure.c
-  ${SRC}/cmdrun.c
-  ${SRC}/cmdsave.c
-  ${SRC}/cmdselftest.c
-  ${SRC}/json.c
+add_executable(evifluor-cli)
+target_sources(evifluor-cli PRIVATE
+  src/main.c
+  src/cmdmeasure.c
+  src/cmddata.c
+  src/cmdsave.c
+  src/cmdbaseline.c
+  src/cmdselftest.c
+  src/cmdexport.c
+  src/cmdempty.c
+  src/cmdrun.c
+  src/json.c
+  ${COMMON}/printerror.c
   ${COMMON}/cmdcommand.c
   ${COMMON}/cmdfwupdate.c
   ${COMMON}/cmdget.c
-  ${COMMON}/cmdset.c
-  ${COMMON}/printerror.c)
+  ${COMMON}/cmdset.c)
 
 if (UNIX)
-    set_target_properties(evidense-cli PROPERTIES
+    set_target_properties(evifluor-cli PROPERTIES
         BUILD_RPATH "$ORIGIN/../lib"
         INSTALL_RPATH "$ORIGIN/../lib")
 endif()
@@ -139,33 +146,33 @@ message("cJSON_SOURCE_DIR    : ${cJSON_SOURCE_DIR}")
 # Stuff only for WIN32
 if (WIN32)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-    target_sources(evidense PRIVATE ${COMMON}/evi_win.c)
-    target_link_libraries(evidense setupapi cjson)
+    target_sources(evifluor PRIVATE ${COMMON}/evi_win.c)
+    target_link_libraries(evifluor setupapi cjson)
 endif()
 
 if (UNIX)
     set (CMAKE_C_FLAGS "-Wall ${EXTRA_C_FLAGS}")
-    target_sources(evidense PRIVATE ${COMMON}/evi_unix.c)
-    target_link_libraries(evidense m)
+    target_sources(evifluor PRIVATE ${COMMON}/evi_unix.c)
+    target_link_libraries(evifluor m)
     find_path(LIBUSB_INCLUDE_DIR NAMES libusb.h PATH_SUFFIXES "include" "libusb" "libusb-1.0")
     find_library(LIBUSB_LIBRARY NAMES usb PATH_SUFFIXES "lib" "lib32" "lib64")
-    target_link_libraries(evidense usb-1.0 cjson)
+    target_link_libraries(evifluor usb-1.0 cjson)
 endif()
 
-target_include_directories(evidense     PRIVATE ${cJSON_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-target_include_directories(evidense-cli PRIVATE ${cJSON_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${COMMON} ${SRC})
-target_link_libraries(evidense-cli PRIVATE evidense cjson)
+target_include_directories(evifluor     PRIVATE ${cJSON_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(evifluor-cli PRIVATE ${cJSON_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${COMMON} ${SRC})
+target_link_libraries(evifluor-cli PRIVATE evifluor cjson)
 
-add_dependencies(evidense     version_h)
-add_dependencies(evidense-cli version_h)
+add_dependencies(evifluor     version_h)
+add_dependencies(evifluor-cli version_h)
 
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 if (ENABLE_ASAN AND UNIX)
-    target_compile_options(evidense     PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
-    target_compile_options(evidense-cli PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
-    target_link_options(evidense        PRIVATE -fsanitize=address)
-    target_link_options(evidense-cli    PRIVATE -fsanitize=address)
+    target_compile_options(evifluor     PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
+    target_compile_options(evifluor-cli PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
+    target_link_options(evifluor        PRIVATE -fsanitize=address)
+    target_link_options(evifluor-cli    PRIVATE -fsanitize=address)
 endif()
 
-install(TARGETS evidense PUBLIC_HEADER)
-install(TARGETS evidense-cli)
+install(TARGETS evifluor PUBLIC_HEADER)
+install(TARGETS evifluor-cli)

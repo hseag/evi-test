@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evibase.h"
+#include "evifluor.h"
 
 /**
- * @brief Handles the `data` command for exporting or inspecting device data.
+ * @brief Handles the `data` CLI command.
  *
- * @param self Pointer to the device instance used by the command.
- * @param argcCmd Number of command-line arguments available in `argvCmd`.
- * @param argvCmd Array of command-line arguments passed to the command.
- * @return Error code indicating success or detailed failure reason.
+ * The command prints or manipulates stored measurement data depending on the
+ * supplied arguments.
+ *
+ * @param self Runtime context controlling the device interaction.
+ * @param argcCmd Number of command specific arguments.
+ * @param argvCmd Vector of command specific arguments.
+ * @return Error code describing the outcome.
  */
 Error_t cmdData(Evi_t * self, int argcCmd, char **argvCmd);
-
-
+	

@@ -1,7 +1,0 @@
-hse.evidense.kit module
-=======================
-
-.. automodule:: hse.evidense.kit
-   :members:
-   :show-inheritance:
-   :undoc-members:

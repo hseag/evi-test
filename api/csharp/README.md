@@ -1,6 +1,6 @@
-# eviDense UV C# Interface
+# eviFluor Duo C# Interface
 
-This directory contains the C# interface for the eviDense UV Photometer.
+This directory contains the C# interface for the eviFluor Duo Fluorometer.
 It is intended for .NET applications that need either a guided measurement workflow or direct low-level device control.
 
 ## Quick Start
@@ -8,7 +8,7 @@ It is intended for .NET applications that need either a guided measurement workf
 - Main documentation: [C# Interfaces](../../doc/csharp.md)
 - High-level API: [C# High-Level API](../../doc/csharp-high-level.md)
 - Low-level API: [C# Low-Level API](../../doc/csharp-low-level.md)
-- Package availability: NuGet package `Hseagcom.EviDense`
+- Package availability: NuGet package `Hseagcom.EviFluor`
 
 ## What You Get
 

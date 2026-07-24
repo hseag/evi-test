@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #include "json.h"
 #include <sys/stat.h>
@@ -12,7 +10,7 @@ cJSON* json_loadFromFile(const char * file)
     FILE*  fin    = 0;
     char*  buffer = NULL;
     cJSON* json   = NULL;
-
+    
     fin = fopen(file, "rb");
 
     if (fin)
@@ -35,18 +33,22 @@ cJSON* json_loadFromFile(const char * file)
     return json;
 }
 
-void json_saveToFile(const char* file, cJSON* json)
+void json_saveToFile(const char *file, cJSON* json)
 {
     FILE* fout   = 0;
     char* buffer = NULL;
 
     fout = fopen(file, "w+");
+    if(fout != NULL)
+    {
+        buffer = cJSON_Print(json);
 
-    buffer = cJSON_Print(json);
+        fwrite(buffer, strlen(buffer), 1, fout);
 
-    fwrite(buffer, strlen(buffer), 1, fout);
+        free(buffer);
 
-    free(buffer);
-
-    fclose(fout);
+        fclose(fout);
+    }
 }
+
+

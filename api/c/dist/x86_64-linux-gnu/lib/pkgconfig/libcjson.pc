@@ -1,5 +1,5 @@
-libdir=/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/lib
-includedir=/builds/pro/colibri/evidense/evidense-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include
+libdir=/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/lib
+includedir=/builds/pro/colibri/evifluor/evifluor-project/out/deploy/dms/api/c/dist/x86_64-linux-gnu/include
 
 Name: libcjson
 Version: 1.7.18

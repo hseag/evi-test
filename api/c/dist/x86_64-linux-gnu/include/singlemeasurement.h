@@ -4,12 +4,10 @@
 #pragma once
 
 #include "channel.h"
-#include "quadruple.h"
 #include <stdbool.h>
 #include "cJSON.h"
 
 #if defined(_WIN64) || defined(_WIN32)
-#include <windows.h>
 #define DLLEXPORT __declspec(dllexport)
 #else
 #define DLLEXPORT
@@ -17,45 +15,31 @@
 
 /**
  * @struct SingleMeasurement_t
- * @brief Represents a single measurement with channels at specific wavelengths.
+ * @brief Represents a single fluorescence measurement.
  *
- * This structure stores measurement data for four different wavelengths,
- * each represented by a Channel_t structure.
+ * Each measurement currently captures the 470 nm channel which includes raw
+ * dark/value readings and LED power metadata.
  */
 typedef struct
 {
-    Channel_t channel230; /**< Measurement channel at 230 nm. */
-    Channel_t channel260; /**< Measurement channel at 260 nm. */
-    Channel_t channel280; /**< Measurement channel at 280 nm. */
-    Channel_t channel340; /**< Measurement channel at 340 nm. */
+    Channel_t channel470; /**< Fluorescence channel at 470 nm. */
 } SingleMeasurement_t;
 
 /**
  * @brief Initializes a SingleMeasurement_t structure with specified channel values.
  *
- * @param channel230 Measurement channel at 230 nm.
- * @param channel260 Measurement channel at 260 nm.
- * @param channel280 Measurement channel at 280 nm.
- * @param channel340 Measurement channel at 340 nm.
+ * @param channel470 Measurement channel at 470 nm.
  * @return An initialized SingleMeasurement_t structure.
  */
-DLLEXPORT SingleMeasurement_t singleMeasurement_init(Channel_t channel230, Channel_t channel260, Channel_t channel280, Channel_t channel340);
+DLLEXPORT SingleMeasurement_t singleMeasurement_init(Channel_t channel470);
 
 /**
- * @brief Retrieves the sample values from a SingleMeasurement_t structure.
+ * @brief Returns the delta value sample - dark..
  *
  * @param self Pointer to the SingleMeasurement_t structure.
- * @return A Quadruple_t structure containing the sample values for all channels.
+ * @return Difference between sample and dark.
  */
-DLLEXPORT Quadruple_t singleMeasurement_sample(const SingleMeasurement_t * self);
-
-/**
- * @brief Retrieves the reference values from a SingleMeasurement_t structure.
- *
- * @param self Pointer to the SingleMeasurement_t structure.
- * @return A Quadruple_t structure containing the reference values for all channels.
- */
-DLLEXPORT Quadruple_t singleMeasurement_reference(const SingleMeasurement_t * self);
+DLLEXPORT double singleMeasurement_delta(const SingleMeasurement_t * self);
 
 /**
  * @brief Prints the contents of a SingleMeasurement_t structure to the specified stream.
@@ -67,18 +51,30 @@ DLLEXPORT Quadruple_t singleMeasurement_reference(const SingleMeasurement_t * se
 DLLEXPORT void singleMeasurement_print(const SingleMeasurement_t * self, FILE * stream, bool newLine);
 
 /**
- * @brief Converts a SingleMeasurement_t structure to its JSON representation.
+ * @brief Serializes a measurement into a newly allocated JSON object.
  *
- * @param measurement Pointer to the measurement to serialize.
- * @return Newly allocated cJSON object describing the measurement, or NULL on failure.
+ * @param measurement Pointer to the measurement to convert.
+ * @return A cJSON object owned by the caller, or NULL on allocation failure.
  */
 DLLEXPORT cJSON* singleMeasurement_toJson(const SingleMeasurement_t * measurement);
 
 /**
- * @brief Populates a SingleMeasurement_t structure from a JSON object.
+ * @brief Populates a measurement from a JSON description.
  *
- * @param obj JSON object containing the serialized measurement fields.
- * @param measurement Pointer to the structure that will receive the parsed values.
- * @return true if the JSON data could be parsed successfully; false otherwise.
+ * The JSON layout must match the structure produced by
+ * singleMeasurement_toJson().
+ *
+ * @param obj JSON object containing the measurement.
+ * @param measurement Output parameter for the parsed data.
+ * @return true when parsing succeeds, otherwise false.
  */
 DLLEXPORT bool singleMeasurement_fromJson(cJSON* obj, SingleMeasurement_t * measurement);
+
+/**
+ * @brief Parses a measurement, reporting validity without mutating on failure.
+ *
+ * @param obj JSON source object.
+ * @param valid Optional flag set to false when required members are missing.
+ * @return A measurement value; contents are undefined when @p valid becomes false.
+ */
+DLLEXPORT SingleMeasurement_t singleMeasurement_fromJsonValid(cJSON* obj, bool * valid);

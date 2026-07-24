@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: (c) 2024 HSE AG, <opensource@hseag.com>
+// SPDX-FileCopyrightText: © 2024 HSE AG, <opensource@hseag.com>
 
 #pragma once
 
-#include "evidense.h"
+#include "evibase.h"
 
 /**
- * @brief Executes the `selftest` command to validate instrument hardware.
+ * @brief Handles the `selftest` CLI command.
  *
- * @param self Pointer to the device instance subjected to the self-test routine.
- * @return Error code detailing the self-test result.
+ * @param self Runtime context that receives self-test results.
+ * @return Error code describing the operation outcome.
  */
 Error_t cmdSelftest(Evi_t * self);
-

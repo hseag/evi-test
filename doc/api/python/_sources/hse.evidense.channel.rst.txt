@@ -1,7 +1,0 @@
-hse.evidense.channel module
-===========================
-
-.. automodule:: hse.evidense.channel
-   :members:
-   :show-inheritance:
-   :undoc-members:
